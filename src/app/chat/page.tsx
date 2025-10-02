@@ -1,297 +1,135 @@
 "use client";
 
-import { useState, FormEvent, useRef, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import { useSearchParams } from "next/navigation";
-import { ShimmeringText } from "@/components/animate-ui/text/shimmering";
-import Link from "next/link";
-import ReactMarkdown from "react-markdown";
+import { MemoizedMarkdown } from "@/components/memoized-markdown";
 
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface AgentCard {
-  id: string;
-  agentType: string;
-  agentAction: string;
-  status: "thinking" | "completed";
-  output: string;
-}
-
-interface CurrentQuery {
-  id: string;
-  content: string;
-  isProcessing: boolean;
-}
-
-export default function ChatPage() {
+function ChatContent() {
+  const [input, setInput] = useState("");
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
-
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (initialQuery) {
-      return [
-        {
-          id: "1",
-          role: "user",
-          content: initialQuery,
-        },
-      ];
-    }
-    return [];
-  });
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentQuery, setCurrentQuery] = useState<CurrentQuery | null>(null);
-  const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const initialLoadRef = useRef(false);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const { messages, sendMessage, status } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+    }),
+  });
 
   useEffect(() => {
-    scrollToBottom();
+    if (initialQuery && messages.length === 0) {
+      sendMessage({
+        parts: [
+          {
+            type: "text",
+            text: initialQuery,
+          },
+        ],
+      });
+    }
+  }, [initialQuery, messages.length, sendMessage]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Send initial query on mount if present
-  useEffect(() => {
-    if (initialQuery && !initialLoadRef.current) {
-      initialLoadRef.current = true;
-      sendMessage(initialQuery);
-    }
-  }, []);
-
-  const sendMessage = async (messageContent: string) => {
-    setIsLoading(true);
-
-    // Set current query
-    const queryId = Date.now().toString();
-    setCurrentQuery({
-      id: queryId,
-      content: messageContent,
-      isProcessing: true,
-    });
-
-    // Create thinking agent card
-    const agentId = `agent_${queryId}`;
-    setAgentCards([
-      {
-        id: agentId,
-        agentType: "project_retrieval",
-        agentAction: "Retrieving project information",
-        status: "thinking",
-        output: "",
-      },
-    ]);
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: messages
-            .filter((m) => m.content !== messageContent)
-            .concat({
-              role: "user",
-              content: messageContent,
-            }),
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch");
-
-      const data = await response.json();
-      console.log(`Retrieved data: ${JSON.stringify(data)}`);
-
-      // Update agent card with result
-      setAgentCards((prev) =>
-        prev.map((card) =>
-          card.id === agentId
-            ? {
-                ...card,
-                status: "completed",
-                output: data.text,
-              }
-            : card,
-        ),
-      );
-
-      // Add agent response to messages and clear temporary UI
-      const assistantMessage: Message = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: data.text,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-      setCurrentQuery(null);
-      setAgentCards([]);
-    } catch (error) {
-      console.error("Error:", error);
-
-      // Update agent card with error
-      setAgentCards((prev) =>
-        prev.map((card) =>
-          card.id === agentId
-            ? {
-                ...card,
-                status: "completed",
-                output: "Sorry, I encountered an error. Please try again.",
-              }
-            : card,
-        ),
-      );
-
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: "Sorry, I encountered an error. Please try again.",
-      };
-
-      setMessages((prev) => [...prev, errorMessage]);
-      setCurrentQuery(null);
-      setAgentCards([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input.trim(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    sendMessage(input.trim());
+    if (input.trim() && status === "ready") {
+      sendMessage({
+        parts: [
+          {
+            type: "text",
+            text: input,
+          },
+        ],
+      });
+      setInput("");
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
-      {/* Header */}
-      <header className="w-full p-4 border-b border-[#2a2a2a]">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <Link
-            href="/"
-            className="text-[#888888] hover:text-white transition-colors"
-          >
-            ← Back
-          </Link>
-        </div>
-      </header>
-
-      {/* Main chat area */}
-      <main className="flex-1 flex flex-col max-w-4xl w-full mx-auto">
-        {/* Messages area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.map((message) => (
-            <div key={message.id} className="w-full">
+    <div className="flex flex-col h-screen bg-black">
+      {/* Messages container */}
+      <div className="flex-1 overflow-y-auto px-4 py-8">
+        <div className="max-w-3xl mx-auto space-y-6">
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`flex gap-4 ${
+                message.role === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
               <div
-                className={`w-full px-4 py-3 rounded-lg ${
+                className={`rounded-lg px-4 py-3 max-w-[80%] ${
                   message.role === "user"
-                    ? "bg-[#1f1f1f] border border-[#3a3a3a] text-gray-400"
-                    : "bg-[#1a1a1a] text-gray-100 border border-[#2a2a2a]"
+                    ? "bg-[#1a1a1a] text-white"
+                    : "bg-[#0f0f0f] text-gray-200 border border-[#2a2a2a]"
                 }`}
               >
-                {message.role === "assistant" ? (
-                  <ReactMarkdown
-                    components={{
-                      a: ({ href, children }) => (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 underline"
-                        >
-                          {children}
-                        </a>
-                      ),
-                    }}
-                  >
-                    {message.content}
-                  </ReactMarkdown>
-                ) : (
-                  <p className="whitespace-pre-wrap text-sm">
-                    {message.content}
-                  </p>
-                )}
+                {message.parts.map((part) => {
+                  if (part.type === "text") {
+                    return (
+                      <MemoizedMarkdown
+                        key={`${message.id}-text`}
+                        id={message.id}
+                        content={part.text}
+                      />
+                    );
+                  }
+                  return null;
+                })}
               </div>
             </div>
           ))}
-
-          {/* Agent Cards */}
-          {agentCards.length > 0 && (
-            <div className="w-full space-y-3">
-              {agentCards.map((card) => (
-                <div
-                  key={card.id}
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <ShimmeringText text={card.agentAction} />
-                  </div>
-                  <div className="text-sm text-gray-100">
-                    {card.status !== "thinking" && (
-                      <ReactMarkdown
-                        components={{
-                          a: ({ href, children }) => (
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300 underline"
-                            >
-                              {children}
-                            </a>
-                          ),
-                        }}
-                      >
-                        {card.output}
-                      </ReactMarkdown>
-                    )}
-                  </div>
+          {status === "streaming" && (
+            <div className="flex gap-4 justify-start">
+              <div className="bg-[#0f0f0f] text-gray-400 border border-[#2a2a2a] rounded-lg px-4 py-3">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-75" />
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-150" />
                 </div>
-              ))}
+              </div>
             </div>
           )}
-
           <div ref={messagesEndRef} />
         </div>
+      </div>
 
-        {/* Input form */}
-        <div className="mt-auto border-t border-[#2a2a2a] p-4">
-          <form onSubmit={handleSubmit}>
-            <div className="flex gap-2">
+      {/* Input container */}
+      <div className="border-t border-[#2a2a2a] bg-black px-4 py-4">
+        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+          <div className="flex gap-3 items-end">
+            <div className="flex-1 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] px-4 py-3">
               <input
-                type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask a follow-up question..."
-                className="flex-1 px-4 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg focus:outline-none focus:border-[#3a3a3a] text-white placeholder-[#666666] text-sm"
-                disabled={isLoading}
+                disabled={status !== "ready"}
+                placeholder="Send a message..."
+                className="w-full bg-transparent text-white placeholder-[#666666] outline-none text-sm"
               />
-              <button
-                type="submit"
-                disabled={isLoading || !input.trim()}
-                className="px-4 py-2.5 bg-[#2563eb] text-white rounded-lg hover:bg-[#1d4ed8] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-              >
-                Send
-              </button>
             </div>
-          </form>
-        </div>
-      </main>
+            <button
+              type="submit"
+              disabled={!input.trim() || status !== "ready"}
+              className="px-4 py-3 rounded-lg bg-white text-black font-medium text-sm hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="flex h-screen bg-black items-center justify-center text-gray-400">Loading...</div>}>
+      <ChatContent />
+    </Suspense>
   );
 }
