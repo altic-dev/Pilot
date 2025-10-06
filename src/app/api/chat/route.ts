@@ -5,7 +5,8 @@ import {
   type UIMessage,
   stepCountIs,
 } from "ai";
-import { posthogProjectRetrievalTool } from "@/tools/posthog-project-retrieval";
+import { posthogProjectRetrievalTool, posthogExperimentCreationTool } from "@/tools";
+import systemPrompt from "@/prompts/system-prompt.md";
 
 export async function POST(request: Request) {
   const { messages }: { messages: UIMessage[] } = await request.json();
@@ -15,8 +16,9 @@ export async function POST(request: Request) {
     messages: convertToModelMessages(messages),
     tools: {
       projectRetrieval: posthogProjectRetrievalTool,
+      experimentCreation: posthogExperimentCreationTool,
     },
-    system: "You are a helpful assistant.",
+    system: systemPrompt,
     stopWhen: stepCountIs(10),
   });
 

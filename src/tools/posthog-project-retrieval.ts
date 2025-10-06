@@ -2,6 +2,7 @@ import { tool } from "ai";
 import description from "./posthog-project-retrieval.md";
 import { z } from "zod/v4";
 import { POSTHOG_URL } from "@/lib/constants";
+import { logger } from "@/lib/logger";
 
 export const posthogProjectRetrievalTool = tool({
   description: description,
@@ -14,10 +15,13 @@ export const posthogProjectRetrievalTool = tool({
     });
 
     if (!response.ok) {
-      throw new Error(`PostHog API error: ${response.status}`);
+      throw new Error(
+        `Unable to retrieve project, PostHog API error: ${response.status}`,
+      );
     }
 
     const data = await response.json();
+    logger.info("Successfully retrieved data from posthog", data);
     const projects = data.results;
     const latestProject = projects[0];
 

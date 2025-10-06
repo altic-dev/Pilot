@@ -69,11 +69,11 @@ function ChatContent() {
                     : "bg-[#0f0f0f] text-gray-200 border border-[#2a2a2a]"
                 }`}
               >
-                {message.parts.map((part) => {
+                {message.parts.map((part, partIndex) => {
                   if (part.type === "text") {
                     return (
                       <MemoizedMarkdown
-                        key={`${message.id}-text`}
+                        key={`${message.id}-text-${partIndex}`}
                         id={message.id}
                         content={part.text}
                       />

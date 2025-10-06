@@ -1,0 +1,144 @@
+{
+  "id": 148213,
+  "name": "A sample experiment",
+  "description": "Test stuff 1",
+  "start_date": "2025-08-14T03:29:39.700000Z",
+  "end_date": null,
+  "feature_flag_key": "a-sample-experiment",
+  "feature_flag": {
+    "id": 176960,
+    "team_id": 202599,
+    "name": "Feature Flag for Experiment A sample experiment",
+    "key": "a-sample-experiment",
+    "filters": {
+      "groups": [
+        {
+          "variant": "new_one",
+          "properties": [
+            {
+              "key": "distinct_id",
+              "type": "person",
+              "value": [
+                "01986e32-27cf-74d3-a4bf-ba3d3e43825c"
+              ],
+              "operator": "exact"
+            }
+          ],
+          "rollout_percentage": 100
+        }
+      ],
+      "payloads": {},
+      "multivariate": {
+        "variants": [
+          {
+            "key": "control",
+            "rollout_percentage": 50
+          },
+          {
+            "key": "new_one",
+            "rollout_percentage": 50
+          }
+        ]
+      },
+      "holdout_groups": null,
+      "aggregation_group_type_index": null
+    },
+    "deleted": false,
+    "active": true,
+    "ensure_experience_continuity": false,
+    "has_encrypted_payloads": false,
+    "version": 5,
+    "evaluation_runtime": "all",
+    "evaluation_tags": []
+  },
+  "holdout": null,
+  "holdout_id": null,
+  "exposure_cohort": null,
+  "parameters": {
+    "feature_flag_variants": [
+      {
+        "key": "control",
+        "rollout_percentage": 50
+      },
+      {
+        "key": "new_one",
+        "rollout_percentage": 50
+      }
+    ],
+    "recommended_sample_size": 765.8119658119657,
+    "exposure_estimate_config": {
+      "metric": {
+        "kind": "ExperimentMetric",
+        "name": "sample-metric",
+        "uuid": "a28a6e50-ae16-4d04-8f91-3c4f029c0253",
+        "series": [
+          {
+            "kind": "EventsNode",
+            "name": "$pageview",
+            "event": "$pageview"
+          }
+        ],
+        "metric_type": "funnel"
+      },
+      "eventFilter": {
+        "name": "$pageview",
+        "event": "$pageview",
+        "entityType": "events",
+        "properties": []
+      },
+      "uniqueUsers": 41,
+      "manualConversionRate": 2,
+      "conversionRateInputType": "automatic"
+    },
+    "recommended_running_time": 261.496768813842,
+    "minimum_detectable_effect": 30
+  },
+  "secondary_metrics": [],
+  "saved_metrics": [],
+  "saved_metrics_ids": null,
+  "filters": {},
+  "archived": false,
+  "deleted": false,
+  "created_by": {
+    "id": 277365,
+    "uuid": "01986e23-a526-0000-1640-4db48d9601f0",
+    "distinct_id": "hOu91iXu8dNP9BcLAFpyr9B1R7XDhlzCUsK7qRGg3c3",
+    "first_name": "Rohith",
+    "last_name": "Gandhi",
+    "email": "grohith327@gmail.com",
+    "is_email_verified": true,
+    "hedgehog_config": null,
+    "role_at_organization": "engineering"
+  },
+  "created_at": "2025-08-14T03:02:57.229704Z",
+  "updated_at": "2025-10-05T06:20:52.214454Z",
+  "type": "product",
+  "exposure_criteria": {
+    "filterTestAccounts": false
+  },
+  "metrics": [
+    {
+      "kind": "ExperimentMetric",
+      "name": "sample-metric",
+      "uuid": "a28a6e50-ae16-4d04-8f91-3c4f029c0253",
+      "series": [
+        {
+          "kind": "EventsNode",
+          "name": "$pageview",
+          "event": "$pageview"
+        }
+      ],
+      "fingerprint": "fdb8cb945fca6bece636cc54dc02886c40362a52065e3680d1202b8295e816dd",
+      "metric_type": "funnel"
+    }
+  ],
+  "metrics_secondary": [],
+  "stats_config": {
+    "method": "bayesian"
+  },
+  "conclusion": null,
+  "conclusion_comment": null,
+  "primary_metrics_ordered_uuids": null,
+  "secondary_metrics_ordered_uuids": null,
+  "user_access_level": "manager"
+}
