@@ -6,6 +6,7 @@ import { DefaultChatTransport } from "ai";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ToolInvocation } from "@/components/tool-invocation";
 
 function ChatContent() {
   const [input, setInput] = useState("");
@@ -112,6 +113,17 @@ function ChatContent() {
                       </div>
                     );
                   }
+
+                  // Handle tool invocation parts
+                  if (typeof part.type === "string" && part.type.startsWith("tool-")) {
+                    return (
+                      <ToolInvocation
+                        key={`${message.id}-tool-${partIndex}`}
+                        invocation={part as any}
+                      />
+                    );
+                  }
+
                   return null;
                 })}
               </div>
