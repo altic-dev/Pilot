@@ -44,13 +44,13 @@ export async function POST(request: Request) {
       toolCalls?.forEach((call, idx) => {
         logger.info(`Main agent tool call ${idx + 1}`, {
           toolName: call.toolName,
-          args: call.args,
+          args: 'args' in call ? call.args : call,
         });
       });
 
       // Log each tool result in detail  
       toolResults?.forEach((result, idx) => {
-        const resultValue = result.result;
+        const resultValue = 'result' in result ? result.result : result;
         const resultPreview = typeof resultValue === 'string'
           ? resultValue.substring(0, 500)
           : JSON.stringify(resultValue).substring(0, 500);
