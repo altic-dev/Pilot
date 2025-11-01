@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useSearchParams } from "next/navigation";
-import { MemoizedMarkdown } from "@/components/memoized-markdown";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 function ChatContent() {
   const [input, setInput] = useState("");
@@ -58,25 +59,57 @@ function ChatContent() {
           {messages.map((message, index) => (
             <div
               key={index}
-              className={`flex gap-4 ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              className={`flex gap-4 ${message.role === "user" ? "justify-end" : "justify-start"
+                }`}
             >
               <div
-                className={`rounded-lg px-4 py-3 max-w-[80%] ${
-                  message.role === "user"
-                    ? "bg-[#1a1a1a] text-white"
-                    : "bg-[#0f0f0f] text-gray-200 border border-[#2a2a2a]"
-                }`}
+                className={`rounded-lg px-4 py-3 max-w-[80%] ${message.role === "user"
+                  ? "bg-[#1a1a1a] text-white"
+                  : "bg-[#0f0f0f] text-gray-200 border border-[#2a2a2a]"
+                  }`}
               >
                 {message.parts.map((part, partIndex) => {
                   if (part.type === "text") {
                     return (
-                      <MemoizedMarkdown
+                      <div
                         key={`${message.id}-text-${partIndex}`}
-                        id={message.id}
-                        content={part.text}
-                      />
+                        className="prose prose-invert prose-sm max-w-none"
+                      >
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code: ({ className, children, ...props }) => {
+                              const match = /language-(\w+)/.exec(className || "");
+                              return match ? (
+                                <pre className="bg-[#1a1a1a] rounded p-3 overflow-x-auto">
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                </pre>
+                              ) : (
+                                <code
+                                  className="bg-[#1a1a1a] rounded px-1 py-0.5"
+                                  {...props}
+                                >
+                                  {children}
+                                </code>
+                              );
+                            },
+                            p: ({ children }) => (
+                              <p className="mb-2 last:mb-0">{children}</p>
+                            ),
+                            ul: ({ children }) => (
+                              <ul className="list-disc ml-4 mb-2">{children}</ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                            ),
+                            li: ({ children }) => <li className="mb-1">{children}</li>,
+                          }}
+                        >
+                          {part.text}
+                        </ReactMarkdown>
+                      </div>
                     );
                   }
                   return null;

@@ -1,36 +1,166 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pilot - AI-Powered A/B Testing Agent
+
+Pilot is an AI assistant that helps you set up PostHog A/B testing experiments and automatically integrate feature flags into your codebase.
+
+## Features
+
+- 🔍 **Automatic Project Detection**: Finds your PostHog projects
+- 🧪 **Experiment Creation**: Creates A/B tests with appropriate metrics
+- 🤖 **Code Automation**: Automatically adds feature flag code to your GitHub repositories
+- 🚀 **Multi-Framework Support**: Works with React, Next.js, Python, Node.js, and more
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 20+ and pnpm
+- PostHog account with API access
+- MorphLLM API key (for code editing)
+- GitHub repository (for code automation)
+
+### Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo-url>
+cd pilot
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+pnpm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up environment variables:
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Edit `.env.local` and add your API keys:
+- `POSTHOG_PERSONAL_API_KEY`: Get from [PostHog Settings](https://us.posthog.com/settings/user-api-keys)
+- `MORPH_LLM_API_KEY`: Get from [MorphLLM](https://morphllm.com)
 
-## Learn More
+4. Run the development server:
+```bash
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Usage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Creating an Experiment
 
-## Deploy on Vercel
+1. Navigate to the Pilot interface
+2. Describe your experiment hypothesis (e.g., "Test a new checkout button design that reduces cart abandonment")
+3. Pilot will:
+   - Find your PostHog project
+   - Create the experiment with appropriate metrics
+   - Generate a feature flag key
+   - Optionally add the feature flag code to your repository
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Example Interactions
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Simple experiment creation:**
+```
+"Create an experiment to test a new hero section on the homepage"
+```
+
+**With code automation:**
+```
+"I want to test a new pricing page layout. Here's my repo: https://github.com/username/project"
+```
+
+## How It Works
+
+Pilot uses AI tool calling to orchestrate three main operations:
+
+1. **Project Retrieval**: Fetches your PostHog project information
+2. **Experiment Creation**: Creates experiments with default "reduce page leave" metrics
+3. **Code Updates**: Clones your repo, detects the framework, adds feature flag code, and commits changes
+
+### Supported Frameworks
+
+- React (with posthog-js)
+- Next.js (client and server components)
+- Node.js/Express
+- Python/Django/Flask
+- Plain JavaScript
+- And more...
+
+## Architecture
+
+- **Frontend**: Next.js 15 with React 19
+- **AI**: Claude Sonnet 4 via Anthropic AI SDK
+- **Code Editing**: MorphLLM for intelligent code merging
+- **Styling**: Tailwind CSS v4
+
+## API Routes
+
+- `POST /api/chat`: Main chat endpoint with streaming responses
+
+## Tools
+
+Pilot has access to three specialized tools:
+
+1. **posthogProjectRetrievalTool**: Retrieves PostHog projects
+2. **posthogExperimentCreationTool**: Creates experiments with metrics
+3. **experimentCodeUpdateTool**: Automates feature flag implementation
+
+## Development
+
+### Project Structure
+
+```
+src/
+├── app/              # Next.js app router
+│   ├── api/chat/     # Chat API endpoint
+│   └── chat/         # Chat UI page
+├── components/       # React components
+├── tools/            # AI tool implementations
+├── prompts/          # System prompts
+├── lib/              # Utilities and types
+└── utils/            # Helper functions
+```
+
+### Adding New Tools
+
+1. Create tool file in `src/tools/`
+2. Define Zod schema for inputs
+3. Implement execute function
+4. Export from `src/tools/index.ts`
+5. Add to tools object in `src/app/api/chat/route.ts`
+
+## Environment Variables
+
+Required:
+- `POSTHOG_PERSONAL_API_KEY`: PostHog API authentication
+- `MORPH_LLM_API_KEY`: MorphLLM code editing service
+
+Optional:
+- `ANTHROPIC_API_KEY`: If using Claude API directly
+
+## Limitations
+
+- Experiments default to "reduce page leave" metric only
+- Code automation requires public GitHub repositories or proper authentication
+- Maximum 20 AI steps per code automation session
+- Bash commands limited to: ls, grep, cat, find, git
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+- TypeScript types are properly defined
+- Tool prompts are concise (under 100 lines)
+- Error handling is comprehensive
+- Tests pass before submitting
+
+## License
+
+[Your License]
+
+## Support
+
+For issues or questions:
+- GitHub Issues: [Your repo]/issues
+- Documentation: [Your docs URL]

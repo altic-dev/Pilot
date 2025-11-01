@@ -15,9 +15,10 @@ export enum DefaultSource {
 }
 
 export interface EventsNode {
-  kind?: "EventsNode";
+  kind: string;
   name: DefaultSource;
   event: DefaultSource;
+  math: string;
 }
 
 export interface ExperimentMetric {

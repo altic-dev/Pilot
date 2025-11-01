@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Assistant - Multi-Agent Chat",
-  description: "AI-powered chat interface with multiple specialized agents",
+  title: "Pilot - AI-Powered A/B Testing Agent",
+  description: "Automate PostHog experiment setup and feature flag implementation with AI",
 };
 
 export default function RootLayout({
