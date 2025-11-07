@@ -1,85 +1,47 @@
-# Experiment Code Update Agent
+# Experiment Code Update Tool
 
-Automates adding PostHog feature flag code to a GitHub repository for A/B testing. Clones the repo, identifies target files, adds feature flag implementation, and commits changes.
+Automates adding PostHog feature flag code to a GitHub repository for A/B testing experiments. This tool clones a repository, analyzes the codebase, installs dependencies if needed, adds feature flag implementation based on your hypothesis, verifies the build succeeds, and commits the changes.
 
 ## When to Use This Tool
 
-Use when:
-- User wants to add feature flag code for A/B testing
-- Implementing a PostHog experiment in a GitHub repository
-- Automating feature flag setup based on a hypothesis
-- Integrating PostHog experiments into an existing codebase
+Use this tool when you need to:
+- Add PostHog feature flag code for A/B testing experiments
+- Implement an experiment in a GitHub repository based on a hypothesis
+- Automate the setup of feature flags in an existing codebase
+- Test variations of features using PostHog experiments
 
-## Agent Workflow
+## What This Tool Does
 
-1. Clone the GitHub repository
-2. Analyze codebase (README, package files) to detect language, framework, and dependencies
-3. Locate target files based on the hypothesis
-4. Install appropriate PostHog SDK if needed
-5. Generate and apply feature flag code
-6. Commit and push changes
+1. **Clones your GitHub repository** into a dedicated folder
+2. **Analyzes the codebase** to detect language, framework, and dependencies
+3. **Installs dependencies** if missing (using pnpm or npm based on project setup)
+4. **Locates target files** based on your hypothesis
+5. **Installs PostHog SDK** if not already present (using the correct package manager)
+6. **Generates and applies feature flag code** following best practices for the detected framework
+7. **Runs build verification** to ensure changes don't break the project
+8. **Commits and pushes changes** only if the build succeeds
 
-## PostHog Feature Flag Patterns
+## Required Parameters
 
-### JavaScript/TypeScript (Browser)
-```javascript
-import posthog from 'posthog-js'
-posthog.init('<key>', { api_host: 'https://us.i.posthog.com' })
-if (posthog.isFeatureEnabled('flag-key')) { /* new feature */ }
-```
+- **githubUrl**: The GitHub repository URL to clone (must be a valid URL)
+- **featureFlagKey**: The PostHog feature flag key for the experiment (lowercase alphanumeric with hyphens)
+- **hypothesis**: Description of what you're testing (minimum 10 characters)
 
-### React
-```javascript
-import { useFeatureFlagEnabled } from 'posthog-js/react'
-const showNew = useFeatureFlagEnabled('flag-key')
-```
+## Supported Languages & Frameworks
 
-### Next.js (Client)
-```javascript
-'use client'
-import { useFeatureFlagEnabled } from 'posthog-js/react'
-```
+- JavaScript/TypeScript (Browser & Node.js)
+- React (including hooks)
+- Next.js (Client & Server components)
+- Python
 
-### Next.js (Server)
-```javascript
-import { PostHog } from 'posthog-node'
-const posthog = new PostHog('<key>', { host: 'https://us.i.posthog.com' })
-await posthog.isFeatureEnabled('flag-key', 'user-id')
-```
+## Example Usage
 
-### Python
-```python
-from posthog import Posthog
-posthog = Posthog('<key>', host='https://us.i.posthog.com')
-posthog.feature_enabled('flag-key', 'user-id')
-```
+**Hypothesis**: "Changing the checkout button color from blue to green will increase conversions"
 
-### Node.js
-```javascript
-const { PostHog } = require('posthog-node')
-const posthog = new PostHog('<key>', { host: 'https://us.i.posthog.com' })
-await posthog.isFeatureEnabled('flag-key', 'user-id')
-```
+**Feature Flag Key**: "green-checkout-button"
 
-## SDK Installation
+**GitHub URL**: "https://github.com/yourorg/yourrepo"
 
-- JavaScript/TypeScript (client): `posthog-js`
-- Node.js/Next.js (server): `posthog-node`
-- Python: `posthog`
-- React: `posthog-js` (with React hooks)
+The tool will automatically detect your project structure, add the appropriate PostHog feature flag code, and ensure everything builds successfully before pushing.
 
-## Available Tools
-
-- **bashTool**: Execute bash commands (ls, grep, cat, find, git only)
-- **textEditorTool**: View, create, and edit files
-- **fileUpdateTool**: Apply intelligent code merges using MorphLLM
-
-## Best Practices
-
-- Read README/package.json first to identify language and framework
-- Check if PostHog is already initialized to avoid duplicates
-- Use language-appropriate feature flag patterns
-- Keep code changes minimal and focused
-- Include clear comments explaining the A/B test logic
-- Maximum 20 steps to prevent infinite loops
-- Always await the generateText result before returning
+---

@@ -13,6 +13,7 @@ function ChatContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const initialMessageSent = useRef(false);
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
@@ -21,7 +22,8 @@ function ChatContent() {
   });
 
   useEffect(() => {
-    if (initialQuery && messages.length === 0) {
+    if (initialQuery && messages.length === 0 && !initialMessageSent.current) {
+      initialMessageSent.current = true;
       sendMessage({
         parts: [
           {
@@ -57,9 +59,9 @@ function ChatContent() {
       {/* Messages container */}
       <div className="flex-1 overflow-y-auto px-4 py-8">
         <div className="max-w-3xl mx-auto space-y-6">
-          {messages.map((message, index) => (
+          {messages.map((message) => (
             <div
-              key={index}
+              key={message.id}
               className={`flex gap-4 ${message.role === "user" ? "justify-end" : "justify-start"
                 }`}
             >

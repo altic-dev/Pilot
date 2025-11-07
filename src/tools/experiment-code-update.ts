@@ -7,7 +7,6 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import OpenAI from "openai";
 import fileUpdateToolDescription from "./file-update-tool.md";
-import experimentCodingAgentPrompt from "./experiment-code-update.md";
 
 const execAsync = promisify(exec);
 const morphClient = new OpenAI({
@@ -211,8 +210,93 @@ const fileUpdateTool = tool({
   },
 });
 
+const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates adding PostHog feature flag code to GitHub repositories for A/B testing.
+
+## Your Workflow
+
+1. Clone the GitHub repository into a new folder called 'posthog-experiments'
+2. Analyze the codebase (README, package.json, etc.) to detect language, framework, and dependencies
+3. Check if dependencies are installed; if not, install using the correct package manager:
+   - Check for pnpm-lock.yaml → use pnpm
+   - Check for package-lock.json → use npm
+   - Run install command if node_modules is missing
+4. Locate target files based on the hypothesis
+5. Install appropriate PostHog SDK if needed (using the detected package manager)
+6. Generate and apply feature flag code
+7. Run build command to verify changes don't break the build (e.g., \`npm run build\` or \`pnpm build\`)
+8. Only if build succeeds, commit and push changes
+
+## PostHog Feature Flag Patterns
+
+### JavaScript/TypeScript (Browser)
+\`\`\`javascript
+import posthog from 'posthog-js'
+posthog.init('<key>', { api_host: 'https://us.i.posthog.com' })
+if (posthog.isFeatureEnabled('flag-key')) { /* new feature */ }
+\`\`\`
+
+### React
+\`\`\`javascript
+import { useFeatureFlagEnabled } from 'posthog-js/react'
+const showNew = useFeatureFlagEnabled('flag-key')
+\`\`\`
+
+### Next.js (Client)
+\`\`\`javascript
+'use client'
+import { useFeatureFlagEnabled } from 'posthog-js/react'
+\`\`\`
+
+### Next.js (Server)
+\`\`\`javascript
+import { PostHog } from 'posthog-node'
+const posthog = new PostHog('<key>', { host: 'https://us.i.posthog.com' })
+await posthog.isFeatureEnabled('flag-key', 'user-id')
+\`\`\`
+
+### Python
+\`\`\`python
+from posthog import Posthog
+posthog = Posthog('<key>', host='https://us.i.posthog.com')
+posthog.feature_enabled('flag-key', 'user-id')
+\`\`\`
+
+### Node.js
+\`\`\`javascript
+const { PostHog } = require('posthog-node')
+const posthog = new PostHog('<key>', { host: 'https://us.i.posthog.com' })
+await posthog.isFeatureEnabled('flag-key', 'user-id')
+\`\`\`
+
+## SDK Installation Commands
+
+- JavaScript/TypeScript (client): \`posthog-js\`
+- Node.js/Next.js (server): \`posthog-node\`
+- Python: \`posthog\`
+- React: \`posthog-js\` (with React hooks)
+
+## Available Tools
+
+- **bash**: Execute bash commands (ls, grep, cat, find, git, mkdir, cd only)
+- **textEditorTool**: View, create, and edit files
+- **fileUpdateTool**: Apply intelligent code merges using MorphLLM
+
+## Critical Requirements
+
+- Read README/package.json first to identify language and framework
+- Detect package manager by checking for lock files (pnpm-lock.yaml → pnpm, package-lock.json → npm)
+- Install dependencies if node_modules is missing (using detected package manager)
+- Check if PostHog is already initialized to avoid duplicates
+- Use language-appropriate feature flag patterns
+- Keep code changes minimal and focused
+- Include clear comments explaining the A/B test logic
+- Always run build command before committing (verify changes don't break the build)
+- Only push changes if build succeeds
+- Maximum 20 steps to prevent infinite loops
+`;
+
 export const experimentCodeUpdateTool = tool({
-  description: experimentCodingAgentPrompt,
+  description: "Automates adding PostHog feature flag code to a GitHub repository for A/B testing. Clones the repo, analyzes the codebase, installs dependencies if needed, adds feature flag implementation, verifies the build succeeds, and commits changes.",
   inputSchema: z.object({
     githubUrl: z.string()
       .url()
@@ -237,17 +321,16 @@ export const experimentCodeUpdateTool = tool({
 
       const result = await generateText({
         model: anthropic("claude-sonnet-4-5"),
-        prompt: `Your job is to perform the tasks:
-    1. Clone the github repo using 'git clone ${githubUrl}'. Create a new folder called 'posthog-experiments' and clone the repo into it.
-    2. Find the right file to make the code changes based on the hypothesis
-    3. Generate just the code for adding the feature flag
-    4. Update the file with the code changes
-    5. Stage the changes using 'git add .'
-    6. Commit the changes with a descriptive message using 'git commit -m "message"'
-    7. Push the changes using 'git push'
+        prompt: `${EXPERIMENT_CODE_UPDATE_AGENT_PROMPT}
 
-    Here is the hypothesis: ${hypothesis}. The github url: ${githubUrl} and the posthog feature flag key: ${featureFlagKey}
-    `,
+## Your Task
+
+GitHub URL: ${githubUrl}
+Feature Flag Key: ${featureFlagKey}
+Hypothesis: ${hypothesis}
+
+Follow the workflow above to add the PostHog feature flag code to the repository.
+`,
         tools: {
           bash: bashTool,
           fileUpdateTool,
