@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Loader2, CheckCircle2, Clock } from "lucide-react";
 
 // Type definitions for tool invocation parts
@@ -13,6 +13,12 @@ interface BaseToolInvocation {
   input: any;
   output?: any;
 }
+
+type ProgressMessage = {
+  timestamp: string;
+  message: string;
+  type: "info" | "success" | "error";
+};
 
 type ProjectRetrievalInput = Record<string, never>;
 
@@ -205,13 +211,24 @@ function formatExperimentCodeUpdateInput(input: any) {
 }
 
 function formatExperimentCodeUpdateOutput(output: string) {
+  // Try to parse structured output
+  let parsedOutput: { executionId?: string; result?: string } = {};
+  let resultText = output;
+
+  try {
+    parsedOutput = JSON.parse(output);
+    resultText = parsedOutput.result || output;
+  } catch (e) {
+    // If parsing fails, use raw output
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-start gap-2">
         <span className="text-sm text-gray-400">Result:</span>
       </div>
       <div className="text-sm text-gray-200 bg-[#1a1a1a] p-3 rounded max-h-60 overflow-y-auto">
-        <pre className="whitespace-pre-wrap break-words">{output}</pre>
+        <pre className="whitespace-pre-wrap break-words">{resultText}</pre>
       </div>
     </div>
   );
@@ -291,6 +308,8 @@ function formatTextVariationOutput(output: any) {
 // Main component
 export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation }) {
   const [isOpen, setIsOpen] = useState(true);
+  const [progressMessages, setProgressMessages] = useState<ProgressMessage[]>([]);
+  const progressEndRef = useRef<HTMLDivElement>(null);
 
   const isComplete = invocation.state === "output-available";
 
@@ -306,6 +325,94 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (str) => str.toUpperCase())
     .trim();
+
+  // Connect to SSE for progress updates (experimentCodeUpdate only)
+  useEffect(() => {
+    if (toolName !== "experimentCodeUpdate" || isComplete) {
+      return;
+    }
+
+    let eventSource: EventSource | null = null;
+
+    const setupSSE = async () => {
+      try {
+        // Calculate input hash
+        const inputData = JSON.stringify(invocation.input);
+        const encoder = new TextEncoder();
+        const data = encoder.encode(inputData);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const inputHash = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+        // Poll for execution ID
+        const pollForExecutionId = async (): Promise<string | null> => {
+          const maxAttempts = 10;
+          let attempts = 0;
+
+          while (attempts < maxAttempts) {
+            try {
+              const response = await fetch("/api/experiment-progress", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ inputHash }),
+              });
+
+              if (response.ok) {
+                const data = await response.json();
+                if (data.executionId) {
+                  return data.executionId;
+                }
+              }
+            } catch (error) {
+              console.error("Failed to fetch execution ID:", error);
+            }
+
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          return null;
+        };
+
+        const executionId = await pollForExecutionId();
+
+        if (!executionId) {
+          console.warn("Could not find execution ID for experiment");
+          return;
+        }
+
+        // Connect to SSE
+        eventSource = new EventSource(`/api/experiment-progress/${executionId}`);
+
+        eventSource.onmessage = (event) => {
+          try {
+            const message: ProgressMessage = JSON.parse(event.data);
+            setProgressMessages((prev) => [...prev, message]);
+          } catch (e) {
+            console.error("Failed to parse progress message:", e);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error("SSE connection error:", error);
+          eventSource?.close();
+        };
+      } catch (error) {
+        console.error("Failed to setup SSE:", error);
+      }
+    };
+
+    setupSSE();
+
+    return () => {
+      eventSource?.close();
+    };
+  }, [toolName, isComplete, invocation.input]);
+
+  // Auto-scroll progress messages
+  useEffect(() => {
+    progressEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [progressMessages]);
 
   // Render tool-specific input
   const renderInput = () => {
@@ -401,6 +508,54 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
             <div className="pl-5">{renderInput()}</div>
           </div>
 
+          {/* Progress Section (experimentCodeUpdate only) */}
+          {toolName === "experimentCodeUpdate" && !isComplete && progressMessages.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                  Progress
+                </h4>
+              </div>
+              <div className="pl-5">
+                <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg p-3 max-h-64 overflow-y-auto space-y-2">
+                  {progressMessages.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-2 text-sm animate-in fade-in slide-in-from-left-2 duration-200"
+                    >
+                      {msg.type === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                      ) : msg.type === "error" ? (
+                        <div className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5">✗</div>
+                      ) : (
+                        <div className="w-4 h-4 flex-shrink-0 mt-0.5">
+                          <div className="w-2 h-2 bg-blue-400 rounded-full" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <span
+                          className={`${msg.type === "success"
+                            ? "text-green-300"
+                            : msg.type === "error"
+                              ? "text-red-300"
+                              : "text-gray-300"
+                            }`}
+                        >
+                          {msg.message}
+                        </span>
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {new Date(msg.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={progressEndRef} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Output Section */}
           {isComplete && (
             <div>
@@ -415,7 +570,7 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
           )}
 
           {/* Loading State */}
-          {!isComplete && (
+          {!isComplete && (toolName !== "experimentCodeUpdate" || progressMessages.length === 0) && (
             <div className="pl-5 flex items-center gap-2 text-sm text-gray-500">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               <span>Waiting for results...</span>

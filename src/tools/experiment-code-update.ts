@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { generateText, stepCountIs, tool } from "ai";
+import { streamText, stepCountIs, tool } from "ai";
 import { logger } from "@/lib/logger";
 import { anthropic } from "@ai-sdk/anthropic";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import OpenAI from "openai";
+import crypto from "crypto";
+import { progressStore } from "@/lib/progress-store";
 import fileUpdateToolDescription from "./file-update-tool.md";
 
 const execAsync = promisify(exec);
@@ -234,6 +236,68 @@ const fileUpdateTool = tool({
   },
 });
 
+// Helper to detect progress stages based on tool calls and text
+function detectProgressStage(toolCalls: any[], text: string): string | null {
+  if (!toolCalls || toolCalls.length === 0) {
+    // Check text for hints when no tool calls
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes("cloning") || lowerText.includes("git clone")) {
+      return "Cloning repository...";
+    } else if (lowerText.includes("analyzing") || lowerText.includes("reading package.json") || lowerText.includes("checking readme")) {
+      return "Analyzing codebase...";
+    } else if (lowerText.includes("installing") && (lowerText.includes("dependencies") || lowerText.includes("packages"))) {
+      return "Installing dependencies...";
+    } else if (lowerText.includes("installing posthog")) {
+      return "Installing PostHog SDK...";
+    }
+    return null;
+  }
+
+  for (const call of toolCalls) {
+    if (call.toolName === "bash") {
+      const command = 'args' in call ? call.args?.command : call.command;
+      if (!command) continue;
+
+      if (command.includes("git clone")) {
+        return "Cloning repository...";
+      } else if (command.includes("npm install") || command.includes("pnpm install") || command.includes("yarn install")) {
+        // Check if it's PostHog or general dependencies
+        if (command.includes("posthog")) {
+          return "Installing PostHog SDK...";
+        }
+        return "Installing dependencies...";
+      } else if (command.includes("npm run build") || command.includes("pnpm build") || command.includes("yarn build")) {
+        return "Building project...";
+      } else if (command.includes("git add")) {
+        return "Staging changes...";
+      } else if (command.includes("git commit")) {
+        return "Committing changes...";
+      } else if (command.includes("git push")) {
+        return "Pushing to remote...";
+      } else if (command.includes("cat") || command.includes("grep") || command.includes("find")) {
+        return "Analyzing codebase...";
+      }
+    } else if (call.toolName === "textEditor" || call.toolName === "textEditorTool") {
+      const commandType = 'args' in call ? call.args?.command : call.command;
+      const path = 'args' in call ? call.args?.path : call.path;
+
+      if (commandType === "view") {
+        // Reading package.json or README indicates analyzing
+        if (path && (path.includes("package.json") || path.includes("README") || path.includes("readme"))) {
+          return "Analyzing codebase...";
+        }
+        return "Locating target files...";
+      } else if (commandType === "str_replace" || commandType === "create") {
+        return "Adding feature flag code...";
+      }
+    } else if (call.toolName === "fileUpdateTool") {
+      return "Adding feature flag code...";
+    }
+  }
+
+  return null;
+}
+
 const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates adding PostHog feature flag code to GitHub repositories for A/B testing.
 
 ## Your Workflow (MUST COMPLETE ALL STEPS IN ORDER)
@@ -255,17 +319,11 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 
 6. **Apply Feature Flag Code**: Generate and apply feature flag code
 
-7. **MANDATORY - Verify Build**: Run the build command to verify changes don't break the build
-   - For npm projects: \`npm run build\`
-   - For pnpm projects: \`pnpm build\`
-   - **If build fails**: Review errors, fix issues, and retry build
-   - **DO NOT proceed to step 8 unless build succeeds**
-
-8. **MANDATORY - Commit Changes**: Create a commit with a descriptive message about the A/B test implementation
+7. **MANDATORY - Commit Changes**: Create a commit with a descriptive message about the A/B test implementation
    - Use git add to stage changes
    - Use git commit with clear message (e.g., "Add PostHog feature flag for [hypothesis]")
 
-9. **MANDATORY - Push Changes**: Push the committed changes to the remote repository
+8. **MANDATORY - Push Changes**: Push the committed changes to the remote repository
    - Use git push to push to the remote
    - Verify the push succeeded
 
@@ -406,17 +464,36 @@ export const experimentCodeUpdateTool = tool({
       .describe("The text variation to use for the test variant. This will be displayed when the feature flag returns 'test'."),
   }),
   execute: async ({ githubUrl, featureFlagKey, hypothesis, copyVariant }): Promise<string> => {
+    // Generate unique execution ID
+    const executionId = crypto.randomUUID();
+
+    // Create input hash for tracking
+    const inputHash = crypto
+      .createHash("sha256")
+      .update(JSON.stringify({ githubUrl, featureFlagKey, hypothesis, copyVariant }))
+      .digest("hex");
+
     logger.info("Experiment code update tool invoked", {
+      executionId,
+      inputHash,
       githubUrl,
       featureFlagKey,
       hypothesis: hypothesis.substring(0, 100),
       copyVariant: copyVariant.substring(0, 100),
     });
 
-    try {
-      logger.info("Starting sub-agent with generateText");
+    // Create progress execution with input hash mapping
+    progressStore.create(executionId, inputHash);
+    progressStore.update(executionId, "Starting experiment code update...");
 
-      const result = await generateText({
+    try {
+      logger.info("Starting sub-agent with streamText", { executionId });
+
+      // Track reported stages with timestamps to avoid spam but allow legitimate repeats
+      const reportedStages = new Map<string, number>();
+      const STAGE_COOLDOWN_MS = 2000; // Don't report same stage within 2 seconds
+
+      const result = streamText({
         model: anthropic("claude-sonnet-4-5"),
         prompt: `${EXPERIMENT_CODE_UPDATE_AGENT_PROMPT}
 
@@ -438,15 +515,30 @@ When implementing the feature flag conditional, use the provided test variant te
         stopWhen: stepCountIs(50),
         onStepFinish: ({ text, toolCalls, toolResults, finishReason, usage }) => {
           logger.info("Sub-agent step completed", {
+            executionId,
             textPreview: text ? text.substring(0, 200) : "(no text)",
             toolCallsCount: toolCalls?.length || 0,
             finishReason,
             usage,
           });
 
+          // Detect and report progress stage
+          const stage = detectProgressStage(toolCalls || [], text || "");
+          if (stage) {
+            const now = Date.now();
+            const lastReported = reportedStages.get(stage);
+
+            // Report if never reported or cooldown has passed
+            if (!lastReported || (now - lastReported) > STAGE_COOLDOWN_MS) {
+              progressStore.update(executionId, stage);
+              reportedStages.set(stage, now);
+            }
+          }
+
           // Log each tool call in detail
           toolCalls?.forEach((call, idx) => {
             logger.info(`Sub-agent tool call ${idx + 1}`, {
+              executionId,
               toolName: call.toolName,
               args: 'args' in call ? call.args : call,
             });
@@ -460,6 +552,7 @@ When implementing the feature flag conditional, use the provided test variant te
               : JSON.stringify(resultValue).substring(0, 500);
 
             logger.info(`Sub-agent tool result ${idx + 1}`, {
+              executionId,
               toolName: result.toolName,
               result: resultPreview,
             });
@@ -467,14 +560,29 @@ When implementing the feature flag conditional, use the provided test variant te
         },
       });
 
+      // Collect full result from stream
+      let fullText = "";
+      for await (const chunk of result.textStream) {
+        fullText += chunk;
+      }
+
       logger.info("Experiment code update completed successfully", {
-        resultLength: result.text.length,
-        textPreview: result.text.substring(0, 200),
+        executionId,
+        resultLength: fullText.length,
+        textPreview: fullText.substring(0, 200),
       });
 
-      return result.text;
+      // Mark as complete
+      progressStore.complete(executionId, true);
+
+      // Return structured data with executionId
+      return JSON.stringify({
+        executionId,
+        result: fullText,
+      });
     } catch (error) {
       logger.error("Failed to update experiment code", {
+        executionId,
         error: error instanceof Error ? {
           message: error.message,
           stack: error.stack,
@@ -482,6 +590,10 @@ When implementing the feature flag conditional, use the provided test variant te
         githubUrl,
         featureFlagKey,
       });
+
+      // Mark as complete with error
+      progressStore.complete(executionId, false);
+
       throw new Error(`Code update failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   },
