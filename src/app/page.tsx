@@ -41,8 +41,8 @@ export default function Home() {
                 onKeyDown={handleKeyDown}
                 placeholder="Enter details of your experiment ..."
                 className="w-full bg-transparent text-white placeholder-[#666666] resize-none outline-none text-sm"
-                rows={1}
-                style={{ minHeight: "24px" }}
+                rows={3}
+                style={{ minHeight: "60px" }}
               />
 
               {/* Bottom bar with mode selector and search button */}

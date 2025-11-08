@@ -3,6 +3,11 @@ import { generateText, tool, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { logger } from "@/lib/logger";
 
+const VariationResponseSchema = z.object({
+  variation: z.string().min(1, "variation text is required"),
+  approach: z.string().min(1, "approach explanation is required"),
+});
+
 const TEXT_VARIATION_AGENT_PROMPT = `You are a creative copywriting AI specialized in generating compelling A/B test variations for digital products.
 
 ## Your Expertise
@@ -30,13 +35,11 @@ Generate ONE compelling text variation based on the provided context. If existin
 
 ## Output Format
 
-Provide your response in this format:
-
-VARIATION:
-[Your generated text variation here]
-
-APPROACH:
-[Brief 1-2 sentence explanation of the strategy behind this variation]
+Return your response as a JSON object using this exact structure (no additional text):
+{
+  "variation": "[Your generated text variation here]",
+  "approach": "[Brief 1-2 sentence explanation of the strategy behind this variation]"
+}
 `;
 
 export const textVariationTool = tool({
@@ -115,7 +118,55 @@ ${tone}`;
         textPreview: result.text.substring(0, 200),
       });
 
-      return result.text;
+      const rawText = result.text.trim();
+      let jsonText = rawText;
+
+      if (jsonText.startsWith("```")) {
+        jsonText = jsonText.replace(/^```(?:json)?\s*/i, "");
+        const closingFenceIndex = jsonText.lastIndexOf("```");
+        if (closingFenceIndex !== -1) {
+          jsonText = jsonText.slice(0, closingFenceIndex);
+        }
+        jsonText = jsonText.trim();
+      }
+
+      let parsedJson: unknown;
+
+      try {
+        parsedJson = JSON.parse(jsonText);
+      } catch (parseError) {
+        logger.error("Failed to parse text variation JSON", {
+          rawTextPreview: rawText.substring(0, 200),
+          parseError: parseError instanceof Error ? {
+            message: parseError.message,
+            stack: parseError.stack,
+          } : String(parseError),
+        });
+        throw new Error("Model did not return valid JSON for text variation.");
+      }
+
+      let validated;
+
+      try {
+        validated = VariationResponseSchema.parse(parsedJson);
+      } catch (validationError) {
+        logger.error("Text variation JSON validation failed", {
+          rawTextPreview: rawText.substring(0, 200),
+          validationError: validationError instanceof z.ZodError
+            ? validationError.issues
+            : validationError instanceof Error
+              ? { message: validationError.message, stack: validationError.stack }
+              : String(validationError),
+        });
+        throw new Error("Model JSON response missing required text variation fields.");
+      }
+
+      logger.info("Text variation JSON parsed successfully", {
+        variationLength: validated.variation.length,
+        approachLength: validated.approach.length,
+      });
+
+      return JSON.stringify(validated);
     } catch (error) {
       logger.error("Failed to generate text variation", {
         error: error instanceof Error ? {

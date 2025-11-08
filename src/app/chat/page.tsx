@@ -13,6 +13,7 @@ function ChatContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialMessageSent = useRef(false);
 
   const { messages, sendMessage, status } = useChat({
@@ -39,6 +40,13 @@ function ChatContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [input]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && status === "ready") {
@@ -51,6 +59,17 @@ function ChatContent() {
         ],
       });
       setInput("");
+      // Reset textarea height after submission
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
     }
   };
 
@@ -149,23 +168,43 @@ function ChatContent() {
       {/* Input container */}
       <div className="border-t border-[#2a2a2a] bg-black px-4 py-4">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-          <div className="flex gap-3 items-end">
-            <div className="flex-1 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] px-4 py-3">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                disabled={status !== "ready"}
-                placeholder="Send a message..."
-                className="w-full bg-transparent text-white placeholder-[#666666] outline-none text-sm"
-              />
+          <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={status !== "ready"}
+              placeholder="Send a message..."
+              rows={1}
+              className="w-full bg-transparent text-white placeholder-[#666666] outline-none text-sm resize-none overflow-hidden"
+              style={{
+                minHeight: "24px",
+              }}
+            />
+
+            {/* Bottom bar with send button */}
+            <div className="flex items-center justify-end mt-3">
+              <button
+                type="submit"
+                disabled={!input.trim() || status !== "ready"}
+                className="p-1.5 rounded-full border border-[#3a3a3a] bg-transparent text-[#888888] hover:text-white hover:border-[#4a4a4a] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 10l7-7m0 0l7 7m-7-7v18"
+                  />
+                </svg>
+              </button>
             </div>
-            <button
-              type="submit"
-              disabled={!input.trim() || status !== "ready"}
-              className="px-4 py-3 rounded-lg bg-white text-black font-medium text-sm hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Send
-            </button>
           </div>
         </form>
       </div>
