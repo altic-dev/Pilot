@@ -25,7 +25,7 @@ function createToolWithParsedArgs(tool: any) {
           args.view_range = JSON.parse(args.view_range);
         } catch (e) {
           // If parsing fails, leave it as-is
-          logger.warn("Failed to parse view_range", { 
+          logger.warn("Failed to parse view_range", {
             view_range: args.view_range,
             error: e instanceof Error ? e.message : String(e)
           });
@@ -40,7 +40,7 @@ const bashTool = anthropic.tools.bash_20250124({
   execute: async ({ command, restart }) => {
     logger.info("Bash tool executing command", { command });
 
-    const allowedCommands = ["ls", "grep", "cat", "find", "git", "mkdir", "cd"];
+    const allowedCommands = ["ls", "grep", "cat", "find", "git", "mkdir", "cd", "npm", "pnpm"];
     const baseCommand = command.trim().split(/\s+/)[0];
 
     if (!allowedCommands.includes(baseCommand)) {
@@ -90,92 +90,92 @@ const textEditorTool = createToolWithParsedArgs(
       insert_line,
       view_range,
     }) => {
-    logger.info("Text editor tool executing", { command, path, view_range });
+      logger.info("Text editor tool executing", { command, path, view_range });
 
-    try {
-      if (command === "view") {
-        const content = await fs.readFile(path, "utf-8");
-        const lines = content.split("\n");
+      try {
+        if (command === "view") {
+          const content = await fs.readFile(path, "utf-8");
+          const lines = content.split("\n");
 
-        if (view_range) {
-          const [start, end] = view_range;
-          const selectedLines = lines.slice(start - 1, end);
-          const result = selectedLines.join("\n");
+          if (view_range) {
+            const [start, end] = view_range;
+            const selectedLines = lines.slice(start - 1, end);
+            const result = selectedLines.join("\n");
+            logger.info("Text editor tool view completed", {
+              path,
+              viewRange: view_range,
+              linesReturned: selectedLines.length,
+              contentPreview: result.substring(0, 200),
+            });
+            return result;
+          }
+
           logger.info("Text editor tool view completed", {
             path,
-            viewRange: view_range,
-            linesReturned: selectedLines.length,
-            contentPreview: result.substring(0, 200),
+            totalLines: lines.length,
+            contentLength: content.length,
+          });
+          return content;
+        }
+
+        if (command === "create") {
+          await fs.writeFile(path, file_text || "", "utf-8");
+          const result = `Created ${path}`;
+          logger.info("Text editor tool create completed", {
+            path,
+            fileTextLength: (file_text || "").length,
           });
           return result;
         }
 
-        logger.info("Text editor tool view completed", {
-          path,
-          totalLines: lines.length,
-          contentLength: content.length,
-        });
-        return content;
-      }
+        if (command === "str_replace") {
+          let content = await fs.readFile(path, "utf-8");
 
-      if (command === "create") {
-        await fs.writeFile(path, file_text || "", "utf-8");
-        const result = `Created ${path}`;
-        logger.info("Text editor tool create completed", {
-          path,
-          fileTextLength: (file_text || "").length,
-        });
-        return result;
-      }
+          if (!old_str) {
+            const error = new Error("old_str is required for str_replace command");
+            logger.error("Text editor tool str_replace failed", {
+              path,
+              reason: "old_str is required",
+            });
+            throw error;
+          }
 
-      if (command === "str_replace") {
-        let content = await fs.readFile(path, "utf-8");
+          if (!content.includes(old_str)) {
+            const error = new Error(`old_str not found in ${path}`);
+            logger.error("Text editor tool str_replace failed", {
+              path,
+              reason: "old_str not found",
+              oldStrPreview: old_str.substring(0, 100),
+            });
+            throw error;
+          }
 
-        if (!old_str) {
-          const error = new Error("old_str is required for str_replace command");
-          logger.error("Text editor tool str_replace failed", {
+          content = content.replace(old_str, new_str || "");
+          await fs.writeFile(path, content, "utf-8");
+          const result = `Replaced content in ${path}`;
+          logger.info("Text editor tool str_replace completed", {
             path,
-            reason: "old_str is required",
+            oldStrLength: old_str.length,
+            newStrLength: (new_str || "").length,
           });
-          throw error;
+          return result;
         }
 
-        if (!content.includes(old_str)) {
-          const error = new Error(`old_str not found in ${path}`);
-          logger.error("Text editor tool str_replace failed", {
-            path,
-            reason: "old_str not found",
-            oldStrPreview: old_str.substring(0, 100),
-          });
-          throw error;
-        }
-
-        content = content.replace(old_str, new_str || "");
-        await fs.writeFile(path, content, "utf-8");
-        const result = `Replaced content in ${path}`;
-        logger.info("Text editor tool str_replace completed", {
+        const error = new Error(`Unknown command: ${command}`);
+        logger.error("Text editor tool unknown command", { command, path });
+        throw error;
+      } catch (error) {
+        logger.error("Text editor tool execution failed", {
+          command,
           path,
-          oldStrLength: old_str.length,
-          newStrLength: (new_str || "").length,
+          error: error instanceof Error ? {
+            message: error.message,
+            stack: error.stack,
+          } : String(error),
         });
-        return result;
+        throw error;
       }
-
-      const error = new Error(`Unknown command: ${command}`);
-      logger.error("Text editor tool unknown command", { command, path });
-      throw error;
-    } catch (error) {
-      logger.error("Text editor tool execution failed", {
-        command,
-        path,
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-        } : String(error),
-      });
-      throw error;
-    }
-  },
+    },
   })
 );
 
@@ -236,19 +236,38 @@ const fileUpdateTool = tool({
 
 const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates adding PostHog feature flag code to GitHub repositories for A/B testing.
 
-## Your Workflow
+## Your Workflow (MUST COMPLETE ALL STEPS IN ORDER)
 
-1. Clone the GitHub repository into a new folder called 'posthog-experiments' (try ~/Documents/posthog-experiments first, fallback to /tmp/posthog-experiments if ~/Documents doesn't exist or is not accessible)
-2. Analyze the codebase (README, package.json, etc.) to detect language, framework, and dependencies
-3. Check if dependencies are installed; if not, install using the correct package manager:
+**CRITICAL**: You MUST complete ALL steps below. Steps 7-9 are MANDATORY and cannot be skipped.
+
+1. **Clone Repository**: Clone the GitHub repository into a new folder called 'posthog-experiments' (try ~/Documents/posthog-experiments first, fallback to /tmp/posthog-experiments if ~/Documents doesn't exist or is not accessible)
+
+2. **Analyze Codebase**: Analyze the codebase (README, package.json, etc.) to detect language, framework, and dependencies
+
+3. **Install Dependencies**: Check if dependencies are installed; if not, install using the correct package manager:
    - Check for pnpm-lock.yaml → use pnpm
    - Check for package-lock.json → use npm
    - Run install command if node_modules is missing
-4. Locate target files based on the hypothesis
-5. Install appropriate PostHog SDK if needed (using the detected package manager)
-6. Generate and apply feature flag code
-7. Run build command to verify changes don't break the build (e.g., \`npm run build\` or \`pnpm build\`)
-8. Only if build succeeds, commit and push changes
+
+4. **Locate Target Files**: Locate target files based on the hypothesis
+
+5. **Install PostHog SDK**: Install appropriate PostHog SDK if needed (using the detected package manager)
+
+6. **Apply Feature Flag Code**: Generate and apply feature flag code
+
+7. **MANDATORY - Verify Build**: Run the build command to verify changes don't break the build
+   - For npm projects: \`npm run build\`
+   - For pnpm projects: \`pnpm build\`
+   - **If build fails**: Review errors, fix issues, and retry build
+   - **DO NOT proceed to step 8 unless build succeeds**
+
+8. **MANDATORY - Commit Changes**: Create a commit with a descriptive message about the A/B test implementation
+   - Use git add to stage changes
+   - Use git commit with clear message (e.g., "Add PostHog feature flag for [hypothesis]")
+
+9. **MANDATORY - Push Changes**: Push the committed changes to the remote repository
+   - Use git push to push to the remote
+   - Verify the push succeeded
 
 ## PostHog Feature Flag Patterns
 
@@ -326,7 +345,7 @@ When a test variant text is provided:
 
 ## Available Tools
 
-- **bash**: Execute bash commands (ls, grep, cat, find, git, mkdir, cd only)
+- **bash**: Execute bash commands (ls, grep, cat, find, git, mkdir, cd, npm, pnpm only)
 - **textEditorTool**: View, create, and edit files
 - **fileUpdateTool**: Apply intelligent code merges using MorphLLM
 
@@ -339,9 +358,34 @@ When a test variant text is provided:
 - Use language-appropriate feature flag patterns
 - Keep code changes minimal and focused
 - Include clear comments explaining the A/B test logic
-- Always run build command before committing (verify changes don't break the build)
-- Only push changes if build succeeds
-- Maximum 20 steps to prevent infinite loops
+- MUST run build command before committing (verify changes don't break the build)
+- MUST commit changes with descriptive message
+- MUST push changes to remote repository
+
+## Success Criteria - YOU MUST COMPLETE ALL OF THESE
+
+Your task is NOT complete until ALL of the following are true:
+
+✓ Build Command Executed: You have run the build command (npm run build or pnpm build)
+✓ Build Passed: The build completed successfully with no errors
+✓ Changes Committed: You have committed changes using git add and git commit
+✓ Changes Pushed: You have pushed changes to remote using git push
+✓ Push Verified: You have confirmed the push succeeded
+
+## Final Report - REQUIRED
+
+At the end of your execution, you MUST provide a summary that includes:
+
+1. **Build Status**: Report whether the build passed or failed
+2. **Commit Status**: Confirm that changes were committed (include commit message)
+3. **Push Status**: Confirm that changes were pushed to remote
+4. **Files Modified**: List the files that were changed
+
+If ANY of the mandatory steps (build, commit, push) failed, you MUST:
+- Clearly state which step failed
+- Explain what went wrong
+- Report the error message
+- DO NOT claim success if any mandatory step failed
 `;
 
 export const experimentCodeUpdateTool = tool({
@@ -391,7 +435,7 @@ When implementing the feature flag conditional, use the provided test variant te
           fileUpdateTool,
           textEditorTool,
         },
-        stopWhen: stepCountIs(20),
+        stopWhen: stepCountIs(50),
         onStepFinish: ({ text, toolCalls, toolResults, finishReason, usage }) => {
           logger.info("Sub-agent step completed", {
             textPreview: text ? text.substring(0, 200) : "(no text)",

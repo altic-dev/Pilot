@@ -251,21 +251,36 @@ function formatTextVariationInput(input: any) {
 }
 
 function formatTextVariationOutput(output: any) {
+  // Parse JSON string if needed
+  let parsedOutput = output;
+  if (typeof output === 'string') {
+    try {
+      parsedOutput = JSON.parse(output);
+    } catch (e) {
+      // If parsing fails, return error message
+      return (
+        <div className="text-sm text-red-400">
+          Failed to parse output
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="space-y-3">
-      {output?.variation && (
+      {parsedOutput?.variation && (
         <div className="space-y-1">
           <span className="text-sm text-gray-400">Variation:</span>
           <div className="text-sm text-gray-200 bg-[#1a1a1a] p-3 rounded border border-[#2a2a2a]">
-            {output.variation}
+            {parsedOutput.variation}
           </div>
         </div>
       )}
-      {output?.approach && (
+      {parsedOutput?.approach && (
         <div className="space-y-1">
           <span className="text-sm text-gray-400">Approach:</span>
           <div className="text-sm text-gray-300 italic">
-            {output.approach}
+            {parsedOutput.approach}
           </div>
         </div>
       )}
