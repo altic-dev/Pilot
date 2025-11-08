@@ -214,7 +214,7 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 
 ## Your Workflow
 
-1. Clone the GitHub repository into a new folder called 'posthog-experiments'
+1. Clone the GitHub repository into a new folder called 'posthog-experiments' (try ~/Documents/posthog-experiments first, fallback to /tmp/posthog-experiments if ~/Documents doesn't exist or is not accessible)
 2. Analyze the codebase (README, package.json, etc.) to detect language, framework, and dependencies
 3. Check if dependencies are installed; if not, install using the correct package manager:
    - Check for pnpm-lock.yaml → use pnpm
@@ -232,40 +232,56 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 \`\`\`javascript
 import posthog from 'posthog-js'
 posthog.init('<key>', { api_host: 'https://us.i.posthog.com' })
-if (posthog.isFeatureEnabled('flag-key')) { /* new feature */ }
+const variant = posthog.getFeatureFlag('flag-key')
+if (variant === 'test') { /* test variant */ } else { /* control variant */ }
 \`\`\`
 
 ### React
 \`\`\`javascript
-import { useFeatureFlagEnabled } from 'posthog-js/react'
-const showNew = useFeatureFlagEnabled('flag-key')
+import { useFeatureFlagVariantKey } from 'posthog-js/react'
+const variant = useFeatureFlagVariantKey('flag-key')
+if (variant === 'test') { /* test variant */ } else { /* control variant */ }
 \`\`\`
 
 ### Next.js (Client)
 \`\`\`javascript
 'use client'
-import { useFeatureFlagEnabled } from 'posthog-js/react'
+import { usePostHog } from 'posthog-js/react'
+import { useEffect, useState } from 'react'
+
+const posthog = usePostHog()
+const [text, setText] = useState('')
+
+useEffect(() => {
+  const variant = posthog.getFeatureFlag('flag-key')
+  setText(variant === 'test' ? 'Test variant' : 'Control variant')
+}, [])
 \`\`\`
 
 ### Next.js (Server)
 \`\`\`javascript
 import { PostHog } from 'posthog-node'
 const posthog = new PostHog('<key>', { host: 'https://us.i.posthog.com' })
-await posthog.isFeatureEnabled('flag-key', 'user-id')
+const flags = await posthog.getAllFlags('user-id')
+const variant = flags['flag-key']
+if (variant === 'test') { /* test variant */ }
 \`\`\`
 
 ### Python
 \`\`\`python
 from posthog import Posthog
 posthog = Posthog('<key>', host='https://us.i.posthog.com')
-posthog.feature_enabled('flag-key', 'user-id')
+variant = posthog.get_feature_flag('flag-key', 'user-id')
+if variant == 'test': # test variant
 \`\`\`
 
 ### Node.js
 \`\`\`javascript
 const { PostHog } = require('posthog-node')
 const posthog = new PostHog('<key>', { host: 'https://us.i.posthog.com' })
-await posthog.isFeatureEnabled('flag-key', 'user-id')
+const flags = await posthog.getAllFlags('user-id')
+const variant = flags['flag-key']
+if (variant === 'test') { /* test variant */ }
 \`\`\`
 
 ## SDK Installation Commands
@@ -274,6 +290,15 @@ await posthog.isFeatureEnabled('flag-key', 'user-id')
 - Node.js/Next.js (server): \`posthog-node\`
 - Python: \`posthog\`
 - React: \`posthog-js\` (with React hooks)
+
+## Using Text Variants
+
+When a test variant text is provided:
+- Locate the original text/copy in the target file
+- Wrap it in a feature flag conditional
+- For the 'test' variant: render the provided test variant text
+- For the 'control' variant: keep the original text
+- Preserve all surrounding code structure and styling
 
 ## Available Tools
 
@@ -308,12 +333,16 @@ export const experimentCodeUpdateTool = tool({
     hypothesis: z.string()
       .min(10, "Hypothesis must be at least 10 characters")
       .describe("The hypothesis of the experiment"),
+    copyVariant: z.string()
+      .min(1, "Copy variant text is required")
+      .describe("The text variation to use for the test variant. This will be displayed when the feature flag returns 'test'."),
   }),
-  execute: async ({ githubUrl, featureFlagKey, hypothesis }): Promise<string> => {
+  execute: async ({ githubUrl, featureFlagKey, hypothesis, copyVariant }): Promise<string> => {
     logger.info("Experiment code update tool invoked", {
       githubUrl,
       featureFlagKey,
       hypothesis: hypothesis.substring(0, 100),
+      copyVariant: copyVariant.substring(0, 100),
     });
 
     try {
@@ -328,8 +357,10 @@ export const experimentCodeUpdateTool = tool({
 GitHub URL: ${githubUrl}
 Feature Flag Key: ${featureFlagKey}
 Hypothesis: ${hypothesis}
+Test Variant Text: ${copyVariant}
 
 Follow the workflow above to add the PostHog feature flag code to the repository.
+When implementing the feature flag conditional, use the provided test variant text for the 'test' branch.
 `,
         tools: {
           bash: bashTool,

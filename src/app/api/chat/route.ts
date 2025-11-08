@@ -9,6 +9,7 @@ import {
   posthogProjectRetrievalTool,
   posthogExperimentCreationTool,
   experimentCodeUpdateTool,
+  textVariationTool,
 } from "@/tools";
 import systemPrompt from "@/prompts/system-prompt.md";
 import { logger } from "@/lib/logger";
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     messages: convertToModelMessages(messages),
     tools: {
       projectRetrieval: posthogProjectRetrievalTool,
+      textVariation: textVariationTool,
       experimentCreation: posthogExperimentCreationTool,
       experimentCodeUpdate: experimentCodeUpdateTool,
     },
