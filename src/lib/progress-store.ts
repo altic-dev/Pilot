@@ -48,6 +48,12 @@ class ProgressStore {
       return;
     }
 
+    const lastMessage = execution.messages[execution.messages.length - 1];
+
+    if (lastMessage && lastMessage.message === message && lastMessage.type === type) {
+      return;
+    }
+
     const progressMessage: ProgressMessage = {
       timestamp: new Date().toISOString(),
       message,
@@ -68,11 +74,16 @@ class ProgressStore {
 
     execution.completed = true;
     
+    const lastMessage = execution.messages[execution.messages.length - 1];
     const completionMessage: ProgressMessage = {
       timestamp: new Date().toISOString(),
       message: success ? "Completed successfully" : "Completed with errors",
       type: success ? "success" : "error",
     };
+
+    if (lastMessage && lastMessage.message === completionMessage.message && lastMessage.type === completionMessage.type) {
+      return;
+    }
 
     execution.messages.push(completionMessage);
 

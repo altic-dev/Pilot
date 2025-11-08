@@ -310,6 +310,7 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
   const [isOpen, setIsOpen] = useState(true);
   const [progressMessages, setProgressMessages] = useState<ProgressMessage[]>([]);
   const progressEndRef = useRef<HTMLDivElement>(null);
+  const seenProgressMessagesRef = useRef<Set<string>>(new Set());
 
   const isComplete = invocation.state === "output-available";
 
@@ -387,7 +388,16 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
         eventSource.onmessage = (event) => {
           try {
             const message: ProgressMessage = JSON.parse(event.data);
-            setProgressMessages((prev) => [...prev, message]);
+            const dedupeKey = `${message.timestamp}|${message.message}|${message.type}`;
+
+            setProgressMessages((prev) => {
+              if (seenProgressMessagesRef.current.has(dedupeKey)) {
+                return prev;
+              }
+
+              seenProgressMessagesRef.current.add(dedupeKey);
+              return [...prev, message];
+            });
           } catch (e) {
             console.error("Failed to parse progress message:", e);
           }
