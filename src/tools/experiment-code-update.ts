@@ -14,6 +14,28 @@ const morphClient = new OpenAI({
   baseURL: "https://api.morphllm.com/v1",
 });
 
+// Wrapper to parse stringified JSON arguments from Anthropic SDK
+function createToolWithParsedArgs(tool: any) {
+  return {
+    ...tool,
+    execute: async (args: any) => {
+      // Parse view_range if it's a stringified array
+      if (args.view_range && typeof args.view_range === 'string') {
+        try {
+          args.view_range = JSON.parse(args.view_range);
+        } catch (e) {
+          // If parsing fails, leave it as-is
+          logger.warn("Failed to parse view_range", { 
+            view_range: args.view_range,
+            error: e instanceof Error ? e.message : String(e)
+          });
+        }
+      }
+      return tool.execute(args);
+    }
+  };
+}
+
 const bashTool = anthropic.tools.bash_20250124({
   execute: async ({ command, restart }) => {
     logger.info("Bash tool executing command", { command });
@@ -57,16 +79,17 @@ const bashTool = anthropic.tools.bash_20250124({
   },
 });
 
-const textEditorTool = anthropic.tools.textEditor_20250728({
-  execute: async ({
-    command,
-    path,
-    file_text,
-    old_str,
-    new_str,
-    insert_line,
-    view_range,
-  }) => {
+const textEditorTool = createToolWithParsedArgs(
+  anthropic.tools.textEditor_20250728({
+    execute: async ({
+      command,
+      path,
+      file_text,
+      old_str,
+      new_str,
+      insert_line,
+      view_range,
+    }) => {
     logger.info("Text editor tool executing", { command, path, view_range });
 
     try {
@@ -153,7 +176,8 @@ const textEditorTool = anthropic.tools.textEditor_20250728({
       throw error;
     }
   },
-});
+  })
+);
 
 const fileUpdateTool = tool({
   description: fileUpdateToolDescription,

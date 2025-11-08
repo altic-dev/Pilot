@@ -46,6 +46,18 @@ interface ExperimentCodeUpdateOutput {
   result: string;
 }
 
+interface TextVariationInput {
+  context: string;
+  existingText?: string;
+  targetAudience?: string;
+  tone?: string;
+}
+
+interface TextVariationOutput {
+  variation: string;
+  approach: string;
+}
+
 // Tool-specific formatters
 function formatProjectRetrievalInput(input: ProjectRetrievalInput) {
   return (
@@ -205,6 +217,62 @@ function formatExperimentCodeUpdateOutput(output: string) {
   );
 }
 
+function formatTextVariationInput(input: any) {
+  return (
+    <div className="space-y-2">
+      {input?.context && (
+        <div className="flex items-start gap-2">
+          <span className="text-sm text-gray-400 min-w-[120px]">Context:</span>
+          <span className="text-sm text-gray-200">{input.context}</span>
+        </div>
+      )}
+      {input?.existingText && (
+        <div className="flex items-start gap-2">
+          <span className="text-sm text-gray-400 min-w-[120px]">Existing Text:</span>
+          <code className="text-sm text-gray-200 bg-[#1a1a1a] px-2 py-1 rounded break-words">
+            {input.existingText}
+          </code>
+        </div>
+      )}
+      {input?.targetAudience && (
+        <div className="flex items-start gap-2">
+          <span className="text-sm text-gray-400 min-w-[120px]">Target Audience:</span>
+          <span className="text-sm text-gray-200">{input.targetAudience}</span>
+        </div>
+      )}
+      {input?.tone && (
+        <div className="flex items-start gap-2">
+          <span className="text-sm text-gray-400 min-w-[120px]">Tone:</span>
+          <span className="text-sm text-gray-200">{input.tone}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTextVariationOutput(output: any) {
+  return (
+    <div className="space-y-3">
+      {output?.variation && (
+        <div className="space-y-1">
+          <span className="text-sm text-gray-400">Variation:</span>
+          <div className="text-sm text-gray-200 bg-[#1a1a1a] p-3 rounded border border-[#2a2a2a]">
+            {output.variation}
+          </div>
+        </div>
+      )}
+      {output?.approach && (
+        <div className="space-y-1">
+          <span className="text-sm text-gray-400">Approach:</span>
+          <div className="text-sm text-gray-300 italic">
+            {output.approach}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Main component
 export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation }) {
   const [isOpen, setIsOpen] = useState(true);
@@ -233,6 +301,8 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
         return formatExperimentCreationInput(invocation.input);
       case "experimentCodeUpdate":
         return formatExperimentCodeUpdateInput(invocation.input);
+      case "textVariation":
+        return formatTextVariationInput(invocation.input);
       default:
         return (
           <div className="text-sm text-gray-300">
@@ -255,6 +325,8 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
         return formatExperimentCreationOutput(invocation.output);
       case "experimentCodeUpdate":
         return formatExperimentCodeUpdateOutput(invocation.output);
+      case "textVariation":
+        return formatTextVariationOutput(invocation.output);
       default:
         return (
           <div className="text-sm text-gray-300">
