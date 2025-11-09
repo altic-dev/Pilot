@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { executionId: string } }
+  { params }: { params: Promise<{ executionId: string }> }
 ) {
-  const { executionId } = params;
+  const { executionId } = await params;
 
   logger.info("SSE connection requested", { executionId });
 
