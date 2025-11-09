@@ -266,8 +266,6 @@ function detectProgressStage(toolCalls: any[], text: string): string | null {
           return "Installing PostHog SDK...";
         }
         return "Installing dependencies...";
-      } else if (command.includes("npm run build") || command.includes("pnpm build") || command.includes("yarn build")) {
-        return "Building project...";
       } else if (command.includes("git add")) {
         return "Staging changes...";
       } else if (command.includes("git commit")) {
@@ -416,7 +414,6 @@ When a test variant text is provided:
 - Use language-appropriate feature flag patterns
 - Keep code changes minimal and focused
 - Include clear comments explaining the A/B test logic
-- MUST run build command before committing (verify changes don't break the build)
 - MUST commit changes with descriptive message
 - MUST push changes to remote repository
 
@@ -424,8 +421,6 @@ When a test variant text is provided:
 
 Your task is NOT complete until ALL of the following are true:
 
-✓ Build Command Executed: You have run the build command (npm run build or pnpm build)
-✓ Build Passed: The build completed successfully with no errors
 ✓ Changes Committed: You have committed changes using git add and git commit
 ✓ Changes Pushed: You have pushed changes to remote using git push
 ✓ Push Verified: You have confirmed the push succeeded
@@ -434,20 +429,13 @@ Your task is NOT complete until ALL of the following are true:
 
 At the end of your execution, you MUST provide a summary that includes:
 
-1. **Build Status**: Report whether the build passed or failed
-2. **Commit Status**: Confirm that changes were committed (include commit message)
-3. **Push Status**: Confirm that changes were pushed to remote
-4. **Files Modified**: List the files that were changed
-
-If ANY of the mandatory steps (build, commit, push) failed, you MUST:
-- Clearly state which step failed
-- Explain what went wrong
-- Report the error message
-- DO NOT claim success if any mandatory step failed
+✓ Commit Status: Confirm that changes were committed (include commit message)
+✓ Push Status: Confirm that changes were pushed to remote
+✓ Files Modified: List the files that were changed
 `;
 
 export const experimentCodeUpdateTool = tool({
-  description: "Automates adding PostHog feature flag code to a GitHub repository for A/B testing. Clones the repo, analyzes the codebase, installs dependencies if needed, adds feature flag implementation, verifies the build succeeds, and commits changes.",
+  description: "Automates adding PostHog feature flag code to a GitHub repository for A/B testing. Clones the repo, analyzes the codebase, installs dependencies if needed, adds feature flag implementation, and commits changes.",
   inputSchema: z.object({
     githubUrl: z.string()
       .url()
