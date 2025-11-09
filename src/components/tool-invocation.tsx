@@ -22,48 +22,6 @@ type ProgressMessage = {
 
 type ProjectRetrievalInput = Record<string, never>;
 
-interface ProjectRetrievalOutput {
-  projectId: number;
-  projectName: string;
-  projectUrl: string;
-}
-
-interface ExperimentCreationInput {
-  projectId: string;
-  name: string;
-  description: string;
-  featureFlagKey: string;
-}
-
-interface ExperimentCreationOutput {
-  success: boolean;
-  experimentId: number;
-  name: string;
-  featureFlagKey: string;
-}
-
-interface ExperimentCodeUpdateInput {
-  githubUrl: string;
-  featureFlagKey: string;
-  hypothesis: string;
-}
-
-interface ExperimentCodeUpdateOutput {
-  result: string;
-}
-
-interface TextVariationInput {
-  context: string;
-  existingText?: string;
-  targetAudience?: string;
-  tone?: string;
-}
-
-interface TextVariationOutput {
-  variation: string;
-  approach: string;
-}
-
 // Tool-specific formatters
 function formatProjectRetrievalInput(input: ProjectRetrievalInput) {
   return (
