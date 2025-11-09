@@ -345,16 +345,12 @@ if (variant === 'test') { /* test variant */ } else { /* control variant */ }
 ### Next.js (Client)
 \`\`\`javascript
 'use client'
-import { usePostHog } from 'posthog-js/react'
-import { useEffect, useState } from 'react'
+import { useFeatureFlagVariantKey, usePostHog } from 'posthog-js/react'
 
 const posthog = usePostHog()
-const [text, setText] = useState('')
-
-useEffect(() => {
-  const variant = posthog.getFeatureFlag('flag-key')
-  setText(variant === 'test' ? 'Test variant' : 'Control variant')
-}, [])
+const variant = useFeatureFlagVariantKey('flag-key')
+const isTestVariant = variant === 'test'
+const text = isTestVariant ? 'Test Variant Text' : 'Control Variant Text'
 \`\`\`
 
 ### Next.js (Server)
