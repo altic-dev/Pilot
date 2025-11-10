@@ -43,6 +43,12 @@ const bashTool = anthropic.tools.bash_20250124({
     logger.info("Bash tool executing command", { command });
 
     const allowedCommands = ["ls", "grep", "cat", "find", "git", "mkdir", "cd", "npm", "pnpm"];
+    const forbiddenGitConfigPatterns = [
+      "git config user.email",
+      "git config --global user.email",
+      "git config user.name",
+      "git config --global user.name",
+    ];
     const baseCommand = command.trim().split(/\s+/)[0];
 
     if (!allowedCommands.includes(baseCommand)) {
@@ -51,6 +57,15 @@ const bashTool = anthropic.tools.bash_20250124({
         command,
         baseCommand,
         allowedCommands
+      });
+      throw new Error(errorMsg);
+    }
+
+    if (forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))) {
+      const errorMsg = "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
+      logger.error("Bash tool command forbidden", {
+        command,
+        forbiddenPatterns: forbiddenGitConfigPatterns,
       });
       throw new Error(errorMsg);
     }
@@ -320,6 +335,7 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 7. **MANDATORY - Commit Changes**: Create a commit with a descriptive message about the A/B test implementation
    - Use git add to stage changes
    - Use git commit with clear message (e.g., "Add PostHog feature flag for [hypothesis]")
+   - Do **not** run git config user.name or git config user.email; rely on the repository's existing identity
 
 8. **MANDATORY - Push Changes**: Push the committed changes to the remote repository
    - Use git push to push to the remote
@@ -411,7 +427,9 @@ When a test variant text is provided:
 - Keep code changes minimal and focused
 - Include clear comments explaining the A/B test logic
 - MUST commit changes with descriptive message
+- MUST NOT run git config user.name or git config user.email commands; use the repository's existing configuration
 - MUST push changes to remote repository
+- MUST push verified
 
 ## Success Criteria - YOU MUST COMPLETE ALL OF THESE
 
