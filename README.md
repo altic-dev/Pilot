@@ -2,6 +2,12 @@
 
 Pilot is an AI assistant that automates the entire A/B testing workflow with PostHog. Simply describe your experiment idea in natural language, and Pilot will create the experiment in PostHog and optionally integrate the feature flag directly into your codebase.
 
+## Demo
+
+[![Pilot Demo](https://img.youtube.com/vi/7N76j9AzgAY/maxresdefault.jpg)](https://youtu.be/7N76j9AzgAY)
+
+Watch Pilot in action!
+
 ## What Pilot Does
 
 Pilot uses AI tool calling to automate three key operations:
