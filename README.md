@@ -1,166 +1,91 @@
 # Pilot - AI-Powered A/B Testing Agent
 
-Pilot is an AI assistant that helps you set up PostHog A/B testing experiments and automatically integrate feature flags into your codebase.
+Pilot is an AI assistant that automates the entire A/B testing workflow with PostHog. Simply describe your experiment idea in natural language, and Pilot will create the experiment in PostHog and optionally integrate the feature flag directly into your codebase.
 
-## Features
+## What Pilot Does
 
-- 🔍 **Automatic Project Detection**: Finds your PostHog projects
-- 🧪 **Experiment Creation**: Creates A/B tests with appropriate metrics
-- 🤖 **Code Automation**: Automatically adds feature flag code to your GitHub repositories
-- 🚀 **Multi-Framework Support**: Works with React, Next.js, Python, Node.js, and more
+Pilot uses AI tool calling to automate three key operations:
 
-## Getting Started
+1. **Project Detection**: Automatically finds your PostHog project
+2. **Experiment Creation**: Creates A/B tests with feature flags and metrics (currently uses `page leave` reduction)
+3. **Code Integration**: Clones your GitHub repository, detects your framework, adds the feature flag code, and commits the changes
 
-### Prerequisites
+### Example
 
-- Node.js 20+ and pnpm
-- PostHog account with API access
-- MorphLLM API key (for code editing)
-- GitHub repository (for code automation)
+You say: *"Test a new checkout button design that reduces cart abandonment"*
 
-### Installation
+Pilot will:
+- Retrieve your PostHog project
+- Create an experiment with a unique feature flag key
+- Add the feature flag code to your repository (if you provide a GitHub URL)
+- Handle framework-specific implementation (React, Next.js, Python, etc.)
 
-1. Clone the repository:
+## API Keys Required
+
+You'll need three API keys to use Pilot:
+
+### 1. Anthropic API Key
+Get from [Anthropic Console](https://console.anthropic.com/)
+
+This powers Pilot's AI capabilities using Claude Sonnet 4.
+
+### 2. PostHog Personal API Key
+Get from [PostHog Settings](https://us.posthog.com/settings/user-api-keys)
+
+**Important:** Your PostHog API key must have these permissions, otherwise we won't be able to create experiments:
+- `project:read`
+- `feature_flag:write`
+- `experiment:write`
+
+### 3. MorphLLM API Key
+Get from [MorphLLM](https://morphllm.com)
+
+This is used for intelligent code editing and merging feature flags into your codebase.
+
+## Installation & Setup
+
+1. Clone and install dependencies:
 ```bash
 git clone <your-repo-url>
 cd pilot
-```
-
-2. Install dependencies:
-```bash
 pnpm install
 ```
 
-3. Set up environment variables:
+2. Set up environment variables:
 ```bash
 cp .env.example .env.local
 ```
 
 Edit `.env.local` and add your API keys:
-- `POSTHOG_PERSONAL_API_KEY`: Get from [PostHog Settings](https://us.posthog.com/settings/user-api-keys)
-- `MORPH_LLM_API_KEY`: Get from [MorphLLM](https://morphllm.com)
+```
+ANTHROPIC_API_KEY=your_anthropic_key_here
+POSTHOG_PERSONAL_API_KEY=your_posthog_key_here
+MORPH_LLM_API_KEY=your_morphllm_key_here
+```
 
-4. Run the development server:
+## Running Pilot
+
+Start the development server:
 ```bash
 pnpm dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
+Open [http://localhost:3000](http://localhost:3000) in your browser and start chatting with Pilot!
 
 ## Usage
 
-### Creating an Experiment
+Simply describe your experiment hypothesis in the chat interface. Examples:
 
-1. Navigate to the Pilot interface
-2. Describe your experiment hypothesis (e.g., "Test a new checkout button design that reduces cart abandonment")
-3. Pilot will:
-   - Find your PostHog project
-   - Create the experiment with appropriate metrics
-   - Generate a feature flag key
-   - Optionally add the feature flag code to your repository
+- *"Create an experiment to test a new hero section on the homepage"*
+- *"Test a new pricing page layout. Here's my repo: https://github.com/username/project"*
+- *"I want to test a green vs blue CTA button"*
 
-### Example Interactions
+Pilot will handle the rest!
 
-**Simple experiment creation:**
-```
-"Create an experiment to test a new hero section on the homepage"
-```
+## Supported Frameworks
 
-**With code automation:**
-```
-"I want to test a new pricing page layout. Here's my repo: https://github.com/username/project"
-```
-
-## How It Works
-
-Pilot uses AI tool calling to orchestrate three main operations:
-
-1. **Project Retrieval**: Fetches your PostHog project information
-2. **Experiment Creation**: Creates experiments with default "reduce page leave" metrics
-3. **Code Updates**: Clones your repo, detects the framework, adds feature flag code, and commits changes
-
-### Supported Frameworks
-
-- React (with posthog-js)
-- Next.js (client and server components)
-- Node.js/Express
-- Python/Django/Flask
-- Plain JavaScript
-- And more...
-
-## Architecture
-
-- **Frontend**: Next.js 15 with React 19
-- **AI**: Claude Sonnet 4 via Anthropic AI SDK
-- **Code Editing**: MorphLLM for intelligent code merging
-- **Styling**: Tailwind CSS v4
-
-## API Routes
-
-- `POST /api/chat`: Main chat endpoint with streaming responses
-
-## Tools
-
-Pilot has access to three specialized tools:
-
-1. **posthogProjectRetrievalTool**: Retrieves PostHog projects
-2. **posthogExperimentCreationTool**: Creates experiments with metrics
-3. **experimentCodeUpdateTool**: Automates feature flag implementation
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── app/              # Next.js app router
-│   ├── api/chat/     # Chat API endpoint
-│   └── chat/         # Chat UI page
-├── components/       # React components
-├── tools/            # AI tool implementations
-├── prompts/          # System prompts
-├── lib/              # Utilities and types
-└── utils/            # Helper functions
-```
-
-### Adding New Tools
-
-1. Create tool file in `src/tools/`
-2. Define Zod schema for inputs
-3. Implement execute function
-4. Export from `src/tools/index.ts`
-5. Add to tools object in `src/app/api/chat/route.ts`
-
-## Environment Variables
-
-Required:
-- `POSTHOG_PERSONAL_API_KEY`: PostHog API authentication
-- `MORPH_LLM_API_KEY`: MorphLLM code editing service
-
-Optional:
-- `ANTHROPIC_API_KEY`: If using Claude API directly
-
-## Limitations
-
-- Experiments default to "reduce page leave" metric only
-- Code automation requires public GitHub repositories or proper authentication
-- Maximum 20 AI steps per code automation session
-- Bash commands limited to: ls, grep, cat, find, git
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-- TypeScript types are properly defined
-- Tool prompts are concise (under 100 lines)
-- Error handling is comprehensive
-- Tests pass before submitting
+React, Next.js, Node.js, Python, Django, Flask, and more.
 
 ## License
 
-[Your License]
-
-## Support
-
-For issues or questions:
-- GitHub Issues: [Your repo]/issues
-- Documentation: [Your docs URL]
+MIT
