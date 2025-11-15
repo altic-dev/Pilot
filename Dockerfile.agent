@@ -1,0 +1,21 @@
+# Lightweight Docker image for GitHub repository operations
+FROM node:22-alpine
+
+# Install git and GitHub CLI
+RUN apk add --no-cache \
+    git \
+    curl \
+    bash \
+    openssh-client \
+    build-base \
+    python3 \
+    github-cli
+
+# Install pnpm globally
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Set working directory
+WORKDIR /workspace
+
+# Keep container running
+CMD ["tail", "-f", "/dev/null"]
