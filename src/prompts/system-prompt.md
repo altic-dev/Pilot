@@ -79,13 +79,12 @@ When a component is selected:
 When a user provides a GitHub repository URL:
 
 1. **FIRST ACTION**: Use **repoSetup** to clone and set up the repository
-   - This enables the file browser and live preview in the UI
+   - This enables live preview in the UI
    - The user can then interact with their running application
    - Store the returned sessionId for subsequent operations
 
 2. **User Interaction**: The user can:
-   - Browse files in the repository using the file browser (right panel, Files tab)
-   - View the live preview of the running application (right panel, Preview tab)
+   - View the live preview of the running application in the right panel
    - Navigate through the app and identify elements they want to test
    - **Select components** directly from the preview (for React apps)
 

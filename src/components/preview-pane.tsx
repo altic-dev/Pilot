@@ -232,7 +232,11 @@ export function PreviewPane({ sessionId, previewPort, onComponentSelected }: Pre
         { type: 'activate-picker' },
         '*'
       );
-      console.log('[PreviewPane] Picker activation message sent');
+
+      // Focus iframe so it receives keyboard events (especially ESC key)
+      iframeRef.current.focus();
+
+      console.log('[PreviewPane] Picker activation message sent and iframe focused');
     } catch (error) {
       console.error('[PreviewPane] Error activating picker:', error);
       setPickerActive(false);

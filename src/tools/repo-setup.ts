@@ -214,7 +214,7 @@ This should be the FIRST tool called when a user provides a GitHub repository UR
         previewPort: hostPort,
         previewUrl: `http://localhost:${hostPort}`,
         previewReady: true,
-        message: `Successfully set up ${repoName}. The dev server is running on port ${hostPort}. You can now browse files and preview the application. ${injectionStatus}`,
+        message: `Successfully set up ${repoName}. The dev server is running on port ${hostPort}. You can now preview the application. ${injectionStatus}`,
       };
     } catch (error) {
       logger.error('Repo setup failed', { sessionId, error });
