@@ -8,11 +8,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolInvocation } from "@/components/tool-invocation";
 import { PreviewPane } from "@/components/preview-pane";
+import { ComponentContextPill } from "@/components/component-context-pill";
+import { ComponentInfo } from "@/lib/picker-injector";
 
 function ChatContent() {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [previewPort, setPreviewPort] = useState<number | null>(null);
+  const [selectedComponent, setSelectedComponent] = useState<ComponentInfo | null>(null);
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -75,15 +78,26 @@ function ChatContent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && status === "ready") {
+      // Include selected component context in the message if available
+      let messageText = input;
+
+      if (selectedComponent) {
+        messageText = `[SELECTED COMPONENT]\n${JSON.stringify(selectedComponent, null, 2)}\n\n[USER MESSAGE]\n${input}`;
+      }
+
       sendMessage({
         parts: [
           {
             type: "text",
-            text: input,
+            text: messageText,
           },
         ],
       });
       setInput("");
+      // Note: We keep the selected component after sending,
+      // so user can ask multiple questions about it
+      // To clear: user can click the X button on the pill
+
       // Reset textarea height after submission
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -195,6 +209,16 @@ function ChatContent() {
         {/* Input container */}
         <div className="border-t border-[#2a2a2a] bg-black px-4 py-4">
           <form onSubmit={handleSubmit} className="max-w-full mx-auto">
+            {/* Selected component pill */}
+            {selectedComponent && (
+              <div className="mb-3">
+                <ComponentContextPill
+                  component={selectedComponent}
+                  onClear={() => setSelectedComponent(null)}
+                />
+              </div>
+            )}
+
             <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
               <textarea
                 ref={textareaRef}
@@ -242,7 +266,11 @@ function ChatContent() {
         {/* Preview Content */}
         <div className="flex-1 overflow-hidden">
           {sessionId && previewPort ? (
-            <PreviewPane sessionId={sessionId} previewPort={previewPort} />
+            <PreviewPane
+              sessionId={sessionId}
+              previewPort={previewPort}
+              onComponentSelected={setSelectedComponent}
+            />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 bg-[#0a0a0a]">
               <p>No preview available. Provide a GitHub URL to get started.</p>

@@ -6,9 +6,11 @@ export interface SessionData {
   repoUrl?: string;
   repoName?: string;
   framework?: string;
-  previewPort?: number;
+  previewPort?: number; // Port exposed to UI
   buildStatus: 'idle' | 'cloning' | 'building' | 'running' | 'failed';
   previewReady: boolean;
+  pickerInjected?: boolean; // Whether picker script was injected
+  modifiedFiles?: string[]; // Files modified for picker injection
   createdAt: number;
   lastActivity: number;
 }

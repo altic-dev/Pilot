@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sessionStore } from '@/lib/session-store';
 import { destroyContainer } from '@/lib/docker';
 import { logger } from '@/lib/logger';
+import { DirectPickerInjection } from '@/lib/direct-picker-injection';
 
 export async function DELETE(
   request: NextRequest,
@@ -16,6 +17,12 @@ export async function DELETE(
         { error: 'Session not found' },
         { status: 404 }
       );
+    }
+
+    // Clean up picker injection (if it was injected)
+    if (session.pickerInjected) {
+      logger.info('Cleaning up picker injection', { sessionId });
+      await DirectPickerInjection.cleanupInjection(sessionId);
     }
 
     // Destroy the Docker container

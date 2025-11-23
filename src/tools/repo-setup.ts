@@ -5,6 +5,7 @@ import { sessionStore } from '@/lib/session-store';
 import { detectBuildConfig } from '@/lib/build-detector';
 import { logger } from '@/lib/logger';
 import { randomUUID } from 'crypto';
+import { DirectPickerInjection } from '@/lib/direct-picker-injection';
 
 export const repoSetupTool = tool({
   description: `Set up a GitHub repository for development. This tool:
@@ -116,6 +117,29 @@ This should be the FIRST tool called when a user provides a GitHub repository UR
         }
       }
 
+      // Inject picker script directly into repository
+      logger.info('Injecting picker script into repository', {
+        sessionId,
+        framework: buildConfig.framework
+      });
+
+      const injectionResult = await DirectPickerInjection.injectPicker(
+        sessionId,
+        buildConfig.framework
+      );
+
+      if (injectionResult.success) {
+        logger.info('Picker script injected successfully', {
+          sessionId,
+          filesModified: injectionResult.filesModified
+        });
+      } else {
+        logger.warn('Failed to inject picker script', {
+          sessionId,
+          error: injectionResult.error
+        });
+      }
+
       // Start dev server in background
       logger.info('Starting dev server', { sessionId, devCommand: buildConfig.devCommand });
 
@@ -126,10 +150,48 @@ This should be the FIRST tool called when a user provides a GitHub repository UR
       // Wait a few seconds for server to start
       await new Promise(resolve => setTimeout(resolve, 5000));
 
+      // Wait for dev server to be ready
+      logger.info('Waiting for dev server to be ready', { sessionId, port: hostPort });
+      let serverReady = false;
+      const maxAttempts = 30; // 30 attempts = 30 seconds max
+
+      for (let i = 0; i < maxAttempts && !serverReady; i++) {
+        try {
+          const check = await fetch(`http://localhost:${hostPort}`, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(1000)
+          });
+
+          // Accept any response that indicates server is running
+          if (check.ok || check.status === 404 || check.status === 405) {
+            serverReady = true;
+            logger.info('Dev server is ready', {
+              sessionId,
+              attempts: i + 1,
+              status: check.status
+            });
+          }
+        } catch (error) {
+          // Server not ready yet, wait 1 second before next attempt
+          if (i < maxAttempts - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      }
+
+      if (!serverReady) {
+        logger.error('Dev server failed to start within 30 seconds', { sessionId });
+        sessionStore.updateSession(sessionId, { buildStatus: 'failed' });
+        throw new Error('Dev server failed to start within 30 seconds. The server may be misconfigured or the port may be in use.');
+      }
+
       // Update session status
       sessionStore.updateSession(sessionId, {
         buildStatus: 'running',
         previewReady: true,
+        previewPort: hostPort, // Use direct container port (no proxy)
+        pickerInjected: injectionResult.success,
+        modifiedFiles: injectionResult.filesModified,
       });
 
       logger.info('Repo setup completed successfully', {
@@ -137,7 +199,12 @@ This should be the FIRST tool called when a user provides a GitHub repository UR
         repoName,
         framework: buildConfig.framework,
         previewPort: hostPort,
+        pickerInjected: injectionResult.success,
       });
+
+      const injectionStatus = injectionResult.success
+        ? 'Picker script has been injected into your repository.'
+        : 'Picker script injection failed - component selection may not work.';
 
       return {
         success: true,
@@ -147,7 +214,7 @@ This should be the FIRST tool called when a user provides a GitHub repository UR
         previewPort: hostPort,
         previewUrl: `http://localhost:${hostPort}`,
         previewReady: true,
-        message: `Successfully set up ${repoName}. The dev server is running on port ${hostPort}. You can now browse files and preview the application.`,
+        message: `Successfully set up ${repoName}. The dev server is running on port ${hostPort}. You can now browse files and preview the application. ${injectionStatus}`,
       };
     } catch (error) {
       logger.error('Repo setup failed', { sessionId, error });
