@@ -18,7 +18,14 @@ const nextConfig: NextConfig = {
     // Externalize server-only packages (Docker SDK and native dependencies)
     if (isServer) {
       config.externals = config.externals || [];
-      config.externals.push('dockerode', 'cpu-features', 'ssh2', 'tar-stream');
+      config.externals.push(
+        'dockerode',
+        'docker-modem',
+        'cpu-features',
+        'ssh2',
+        'ssh2-streams',
+        'tar-stream'
+      );
     }
 
     return config;

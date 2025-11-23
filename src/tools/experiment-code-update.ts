@@ -6,12 +6,16 @@ import OpenAI from "openai";
 import crypto from "crypto";
 import { progressStore } from "@/lib/progress-store";
 import fileUpdateToolDescription from "./file-update-tool.md";
-import * as docker from "@/lib/docker";
 
 const morphClient = new OpenAI({
   apiKey: process.env.MORPH_LLM_API_KEY,
   baseURL: "https://api.morphllm.com/v1",
 });
+
+// Helper to dynamically import docker module (server-side only)
+async function getDockerModule() {
+  return import("@/lib/docker");
+}
 
 // Wrapper to parse stringified JSON arguments from Anthropic SDK
 function createToolWithParsedArgs(tool: any) {
@@ -19,31 +23,43 @@ function createToolWithParsedArgs(tool: any) {
     ...tool,
     execute: async (args: any) => {
       // Parse view_range if it's a stringified array
-      if (args.view_range && typeof args.view_range === 'string') {
+      if (args.view_range && typeof args.view_range === "string") {
         try {
           args.view_range = JSON.parse(args.view_range);
         } catch (e) {
           // If parsing fails, leave it as-is
           logger.warn("Failed to parse view_range", {
             view_range: args.view_range,
-            error: e instanceof Error ? e.message : String(e)
+            error: e instanceof Error ? e.message : String(e),
           });
         }
       }
       return tool.execute(args);
-    }
+    },
   };
 }
 
 /**
  * Create tools that operate within a Docker container
  */
-function createDockerTools(sessionId: string) {
+async function createDockerTools(sessionId: string) {
+  const docker = await getDockerModule();
   const bashTool = anthropic.tools.bash_20250124({
     execute: async ({ command, restart }) => {
       logger.info("Docker bash tool executing command", { sessionId, command });
 
-      const allowedCommands = ["ls", "grep", "cat", "find", "git", "mkdir", "cd", "npm", "pnpm", "gh"];
+      const allowedCommands = [
+        "ls",
+        "grep",
+        "cat",
+        "find",
+        "git",
+        "mkdir",
+        "cd",
+        "npm",
+        "pnpm",
+        "gh",
+      ];
       const forbiddenGitConfigPatterns = [
         "git config user.email",
         "git config --global user.email",
@@ -58,13 +74,16 @@ function createDockerTools(sessionId: string) {
           sessionId,
           command,
           baseCommand,
-          allowedCommands
+          allowedCommands,
         });
         throw new Error(errorMsg);
       }
 
-      if (forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))) {
-        const errorMsg = "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
+      if (
+        forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))
+      ) {
+        const errorMsg =
+          "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
         logger.error("Docker bash tool command forbidden", {
           sessionId,
           command,
@@ -76,7 +95,7 @@ function createDockerTools(sessionId: string) {
       try {
         const { stdout, stderr, exitCode } = await docker.execCommand(
           sessionId,
-          ['/bin/sh', '-c', command]
+          ["/bin/sh", "-c", command],
         );
 
         const output = stdout || stderr;
@@ -97,10 +116,13 @@ function createDockerTools(sessionId: string) {
         logger.error("Docker bash tool command failed", {
           sessionId,
           command,
-          error: error instanceof Error ? {
-            message: error.message,
-            stack: error.stack,
-          } : String(error),
+          error:
+            error instanceof Error
+              ? {
+                  message: error.message,
+                  stack: error.stack,
+                }
+              : String(error),
         });
         throw error;
       }
@@ -118,7 +140,12 @@ function createDockerTools(sessionId: string) {
         insert_line,
         view_range,
       }) => {
-        logger.info("Docker text editor tool executing", { sessionId, command, path, view_range });
+        logger.info("Docker text editor tool executing", {
+          sessionId,
+          command,
+          path,
+          view_range,
+        });
 
         try {
           if (command === "view") {
@@ -163,7 +190,9 @@ function createDockerTools(sessionId: string) {
             let content = await docker.readFile(sessionId, path);
 
             if (!old_str) {
-              const error = new Error("old_str is required for str_replace command");
+              const error = new Error(
+                "old_str is required for str_replace command",
+              );
               logger.error("Docker text editor tool str_replace failed", {
                 sessionId,
                 path,
@@ -196,22 +225,29 @@ function createDockerTools(sessionId: string) {
           }
 
           const error = new Error(`Unknown command: ${command}`);
-          logger.error("Docker text editor tool unknown command", { sessionId, command, path });
+          logger.error("Docker text editor tool unknown command", {
+            sessionId,
+            command,
+            path,
+          });
           throw error;
         } catch (error) {
           logger.error("Docker text editor tool execution failed", {
             sessionId,
             command,
             path,
-            error: error instanceof Error ? {
-              message: error.message,
-              stack: error.stack,
-            } : String(error),
+            error:
+              error instanceof Error
+                ? {
+                    message: error.message,
+                    stack: error.stack,
+                  }
+                : String(error),
           });
           throw error;
         }
       },
-    })
+    }),
   );
 
   const fileUpdateTool = tool({
@@ -262,10 +298,13 @@ function createDockerTools(sessionId: string) {
           sessionId,
           instruction,
           codeLength: code.length,
-          error: error instanceof Error ? {
-            message: error.message,
-            stack: error.stack,
-          } : String(error),
+          error:
+            error instanceof Error
+              ? {
+                  message: error.message,
+                  stack: error.stack,
+                }
+              : String(error),
         });
         throw error;
       }
@@ -277,29 +316,37 @@ function createDockerTools(sessionId: string) {
     description: "Clone a GitHub repository into the container workspace",
     inputSchema: z.object({
       url: z.string().url().describe("The GitHub repository URL to clone"),
-      directory: z.string().optional().describe("Optional directory name for the cloned repo"),
+      directory: z
+        .string()
+        .optional()
+        .describe("Optional directory name for the cloned repo"),
     }),
     execute: async ({ url, directory }) => {
       logger.info("Git clone tool executing", { sessionId, url, directory });
 
-      const cloneCommand = directory ? `git clone ${url} ${directory}` : `git clone ${url}`;
-      const { stdout, stderr, exitCode } = await docker.execCommand(
-        sessionId,
-        ['/bin/sh', '-c', cloneCommand]
-      );
+      const cloneCommand = directory
+        ? `gh repo clone ${url} ${directory}`
+        : `gh repo clone ${url}`;
+      const { stdout, stderr, exitCode } = await docker.execCommand(sessionId, [
+        "/bin/sh",
+        "-c",
+        cloneCommand,
+      ]);
 
       if (exitCode !== 0) {
         throw new Error(`Git clone failed: ${stderr}`);
       }
 
-      return `Successfully cloned ${url}${directory ? ` into ${directory}` : ''}`;
+      return `Successfully cloned ${url}${directory ? ` into ${directory}` : ""}`;
     },
   });
 
   const gitAddTool = tool({
     description: "Stage files for commit using git add",
     inputSchema: z.object({
-      files: z.string().describe("Files to stage (e.g., '.' for all, or specific file paths)"),
+      files: z
+        .string()
+        .describe("Files to stage (e.g., '.' for all, or specific file paths)"),
       workingDir: z.string().describe("The git repository directory"),
     }),
     execute: async ({ files, workingDir }) => {
@@ -307,8 +354,8 @@ function createDockerTools(sessionId: string) {
 
       const { stdout, stderr, exitCode } = await docker.execCommand(
         sessionId,
-        ['/bin/sh', '-c', `git add ${files}`],
-        workingDir
+        ["/bin/sh", "-c", `git add ${files}`],
+        workingDir,
       );
 
       if (exitCode !== 0) {
@@ -326,12 +373,16 @@ function createDockerTools(sessionId: string) {
       workingDir: z.string().describe("The git repository directory"),
     }),
     execute: async ({ message, workingDir }) => {
-      logger.info("Git commit tool executing", { sessionId, message, workingDir });
+      logger.info("Git commit tool executing", {
+        sessionId,
+        message,
+        workingDir,
+      });
 
       const { stdout, stderr, exitCode } = await docker.execCommand(
         sessionId,
-        ['/bin/sh', '-c', `git commit -m "${message}"`],
-        workingDir
+        ["/bin/sh", "-c", `git commit -m "${message}"`],
+        workingDir,
       );
 
       if (exitCode !== 0) {
@@ -339,31 +390,6 @@ function createDockerTools(sessionId: string) {
       }
 
       return `Successfully created commit: ${message}`;
-    },
-  });
-
-  const gitPushTool = tool({
-    description: "Push commits to the remote repository",
-    inputSchema: z.object({
-      remote: z.string().optional().describe("Remote name (default: origin)"),
-      branch: z.string().optional().describe("Branch name (default: current branch)"),
-      workingDir: z.string().describe("The git repository directory"),
-    }),
-    execute: async ({ remote = "origin", branch, workingDir }) => {
-      logger.info("Git push tool executing", { sessionId, remote, branch, workingDir });
-
-      const pushCommand = branch ? `git push ${remote} ${branch}` : `git push`;
-      const { stdout, stderr, exitCode } = await docker.execCommand(
-        sessionId,
-        ['/bin/sh', '-c', pushCommand],
-        workingDir
-      );
-
-      if (exitCode !== 0) {
-        throw new Error(`Git push failed: ${stderr}`);
-      }
-
-      return `Successfully pushed to ${remote}${branch ? `/${branch}` : ''}`;
     },
   });
 
@@ -376,12 +402,21 @@ function createDockerTools(sessionId: string) {
       workingDir: z.string().describe("The git repository directory"),
     }),
     execute: async ({ title, body, base = "main", workingDir }) => {
-      logger.info("GitHub create PR tool executing", { sessionId, title, base, workingDir });
+      logger.info("GitHub create PR tool executing", {
+        sessionId,
+        title,
+        base,
+        workingDir,
+      });
 
       const { stdout, stderr, exitCode } = await docker.execCommand(
         sessionId,
-        ['/bin/sh', '-c', `gh pr create --title "${title}" --body "${body}" --base ${base}`],
-        workingDir
+        [
+          "/bin/sh",
+          "-c",
+          `gh pr create --title "${title}" --body "${body}" --base ${base}`,
+        ],
+        workingDir,
       );
 
       if (exitCode !== 0) {
@@ -399,7 +434,6 @@ function createDockerTools(sessionId: string) {
     gitCloneTool,
     gitAddTool,
     gitCommitTool,
-    gitPushTool,
     githubCreatePRTool,
   };
 }
@@ -409,11 +443,22 @@ function detectProgressStage(toolCalls: any[], text: string): string | null {
   if (!toolCalls || toolCalls.length === 0) {
     // Check text for hints when no tool calls
     const lowerText = text.toLowerCase();
-    if (lowerText.includes("cloning") || lowerText.includes("git clone")) {
+    if (
+      lowerText.includes("cloning") ||
+      lowerText.includes("git clone") ||
+      lowerText.includes("gh repo clone")
+    ) {
       return "Cloning repository...";
-    } else if (lowerText.includes("analyzing") || lowerText.includes("reading package.json") || lowerText.includes("checking readme")) {
+    } else if (
+      lowerText.includes("analyzing") ||
+      lowerText.includes("reading package.json") ||
+      lowerText.includes("checking readme")
+    ) {
       return "Analyzing codebase...";
-    } else if (lowerText.includes("installing") && (lowerText.includes("dependencies") || lowerText.includes("packages"))) {
+    } else if (
+      lowerText.includes("installing") &&
+      (lowerText.includes("dependencies") || lowerText.includes("packages"))
+    ) {
       return "Installing dependencies...";
     } else if (lowerText.includes("installing posthog")) {
       return "Installing PostHog SDK...";
@@ -428,17 +473,19 @@ function detectProgressStage(toolCalls: any[], text: string): string | null {
       return "Staging changes...";
     } else if (call.toolName === "gitCommitTool") {
       return "Committing changes...";
-    } else if (call.toolName === "gitPushTool") {
-      return "Pushing to remote...";
     } else if (call.toolName === "githubCreatePRTool") {
       return "Creating pull request...";
     } else if (call.toolName === "bash") {
-      const command = 'args' in call ? call.args?.command : call.command;
+      const command = "args" in call ? call.args?.command : call.command;
       if (!command) continue;
 
-      if (command.includes("git clone")) {
+      if (command.includes("git clone") || command.includes("gh repo clone")) {
         return "Cloning repository...";
-      } else if (command.includes("npm install") || command.includes("pnpm install") || command.includes("yarn install")) {
+      } else if (
+        command.includes("npm install") ||
+        command.includes("pnpm install") ||
+        command.includes("yarn install")
+      ) {
         // Check if it's PostHog or general dependencies
         if (command.includes("posthog")) {
           return "Installing PostHog SDK...";
@@ -448,18 +495,28 @@ function detectProgressStage(toolCalls: any[], text: string): string | null {
         return "Staging changes...";
       } else if (command.includes("git commit")) {
         return "Committing changes...";
-      } else if (command.includes("git push")) {
-        return "Pushing to remote...";
-      } else if (command.includes("cat") || command.includes("grep") || command.includes("find")) {
+      } else if (
+        command.includes("cat") ||
+        command.includes("grep") ||
+        command.includes("find")
+      ) {
         return "Analyzing codebase...";
       }
-    } else if (call.toolName === "textEditor" || call.toolName === "textEditorTool") {
-      const commandType = 'args' in call ? call.args?.command : call.command;
-      const path = 'args' in call ? call.args?.path : call.path;
+    } else if (
+      call.toolName === "textEditor" ||
+      call.toolName === "textEditorTool"
+    ) {
+      const commandType = "args" in call ? call.args?.command : call.command;
+      const path = "args" in call ? call.args?.path : call.path;
 
       if (commandType === "view") {
         // Reading package.json or README indicates analyzing
-        if (path && (path.includes("package.json") || path.includes("README") || path.includes("readme"))) {
+        if (
+          path &&
+          (path.includes("package.json") ||
+            path.includes("README") ||
+            path.includes("readme"))
+        ) {
           return "Analyzing codebase...";
         }
         return "Locating target files...";
@@ -478,7 +535,7 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 
 ## Your Workflow (MUST COMPLETE ALL STEPS IN ORDER)
 
-**CRITICAL**: You MUST complete ALL steps below. Steps 7-9 are MANDATORY and cannot be skipped.
+**CRITICAL**: You MUST complete ALL steps below. Steps 7-8 are MANDATORY and cannot be skipped.
 
 **NOTE**: All file operations happen inside an isolated Docker container at /workspace. The container is automatically created and destroyed for each session.
 
@@ -503,10 +560,13 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
    - Use gitAddTool to stage files (e.g., files: ".")
    - Use gitCommitTool with a descriptive message (e.g., "Add PostHog feature flag for [hypothesis]")
    - Provide the repository's working directory path to both tools
+   - Do NOT use --author flag or modify git config - use the repository's existing configuration
 
-8. **MANDATORY - Push Changes**: Use **gitPushTool** to push commits to remote
-   - Provide the repository's working directory path
-   - Verify the push succeeded
+8. **MANDATORY - Create Pull Request**: Use **githubCreatePRTool** to create a PR
+   - Provide a descriptive title summarizing the feature flag implementation
+   - Include body with: what was changed, hypothesis being tested, test variant details
+   - The tool will automatically push any unpushed commits to the remote
+   - Verify the PR was created successfully and capture the PR URL
 
 ## PostHog Feature Flag Patterns
 
@@ -589,10 +649,9 @@ When a test variant text is provided:
 - **gitCloneTool**: Clone a GitHub repository (use this instead of bash for cloning)
 - **gitAddTool**: Stage files for commit using git add
 - **gitCommitTool**: Create a commit with staged changes
-- **gitPushTool**: Push commits to remote repository
-- **githubCreatePRTool**: Create a GitHub Pull Request using gh CLI
+- **githubCreatePRTool**: Create a GitHub Pull Request using gh CLI (automatically pushes unpushed commits)
 
-**IMPORTANT**: Use the dedicated git tools (gitCloneTool, gitAddTool, gitCommitTool, gitPushTool) instead of running git commands through bash. They provide better error handling and logging.
+**IMPORTANT**: Use the dedicated git tools (gitCloneTool, gitAddTool, gitCommitTool, githubCreatePRTool) instead of running git commands through bash. They provide better error handling and logging.
 
 ## Critical Requirements
 
@@ -604,53 +663,68 @@ When a test variant text is provided:
 - Keep code changes minimal and focused
 - Include clear comments explaining the A\\/B test logic
 - MUST commit changes with descriptive message
-- MUST NOT run git config user.name or git config user.email commands; use the repository's existing configuration
-- MUST push changes to remote repository
-- MUST push verified
+- MUST NOT run git config user.name or git config user.email commands
+- MUST NOT use --author flag or any mechanism to override the commit author/committer
+- MUST use the repository's existing git configuration as-is
+- MUST create pull request with descriptive title and body
+- MUST capture and report the PR URL
 
 ## Success Criteria - YOU MUST COMPLETE ALL OF THESE
 
 Your task is NOT complete until ALL of the following are true:
 
 ✓ Changes Committed: You have committed changes using **gitAddTool** and **gitCommitTool**
-✓ Changes Pushed: You have pushed changes to remote using **gitPushTool**
-✓ Push Verified: You have confirmed the push succeeded
+✓ Pull Request Created: You have created a PR using **githubCreatePRTool**
+✓ PR URL Captured: You have the PR URL from the successful creation
 
 ## Final Report - REQUIRED
 
 At the end of your execution, you MUST provide a summary that includes:
 
 ✓ Commit Status: Confirm that changes were committed (include commit message)
-✓ Push Status: Confirm that changes were pushed to remote
+✓ Pull Request Status: Confirm that PR was created (include PR URL)
 ✓ Files Modified: List the files that were changed
 ✓ Repository Path: The working directory path used in the container
 `;
 
 export const experimentCodeUpdateTool = tool({
-  description: "Automates adding PostHog feature flag code to a GitHub repository for A\\/B testing. Clones the repo, analyzes the codebase, installs dependencies if needed, adds feature flag implementation, and commits changes.",
+  description:
+    "Automates adding PostHog feature flag code to a GitHub repository for A\\/B testing. Clones the repo, analyzes the codebase, installs dependencies if needed, adds feature flag implementation, and commits changes.",
   inputSchema: z.object({
-    githubUrl: z.string()
-      .url()
-      .describe("A github url to clone the code"),
+    githubUrl: z.string().url().describe("A github url to clone the code"),
     featureFlagKey: z
       .string()
-      .regex(/^[a-z0-9-]+$/, "Feature flag key must be lowercase alphanumeric with hyphens")
+      .regex(
+        /^[a-z0-9-]+$/,
+        "Feature flag key must be lowercase alphanumeric with hyphens",
+      )
       .describe("The feature flag key used to identify the experiment"),
-    hypothesis: z.string()
+    hypothesis: z
+      .string()
       .min(10, "Hypothesis must be at least 10 characters")
       .describe("The hypothesis of the experiment"),
-    copyVariant: z.string()
+    copyVariant: z
+      .string()
       .min(1, "Copy variant text is required")
-      .describe("The text variation to use for the test variant. This will be displayed when the feature flag returns 'test'."),
+      .describe(
+        "The text variation to use for the test variant. This will be displayed when the feature flag returns 'test'.",
+      ),
   }),
-  execute: async ({ githubUrl, featureFlagKey, hypothesis, copyVariant }): Promise<string> => {
+  execute: async ({
+    githubUrl,
+    featureFlagKey,
+    hypothesis,
+    copyVariant,
+  }): Promise<string> => {
     // Generate unique execution ID (also used as session ID for Docker)
     const executionId = crypto.randomUUID();
 
     // Create input hash for tracking
     const inputHash = crypto
       .createHash("sha256")
-      .update(JSON.stringify({ githubUrl, featureFlagKey, hypothesis, copyVariant }))
+      .update(
+        JSON.stringify({ githubUrl, featureFlagKey, hypothesis, copyVariant }),
+      )
       .digest("hex");
 
     logger.info("Experiment code update tool invoked", {
@@ -668,6 +742,7 @@ export const experimentCodeUpdateTool = tool({
 
     // Create Docker container for this session
     try {
+      const docker = await getDockerModule();
       await docker.createContainer(executionId);
       logger.info("Docker container created", { executionId });
       progressStore.update(executionId, "Starting experiment code update...");
@@ -681,7 +756,7 @@ export const experimentCodeUpdateTool = tool({
       logger.info("Starting sub-agent with streamText", { executionId });
 
       // Create Docker-based tools for this session
-      const tools = createDockerTools(executionId);
+      const tools = await createDockerTools(executionId);
 
       // Track reported stages with timestamps to avoid spam but allow legitimate repeats
       const reportedStages = new Map<string, number>();
@@ -708,11 +783,16 @@ When implementing the feature flag conditional, use the provided test variant te
           gitCloneTool: tools.gitCloneTool,
           gitAddTool: tools.gitAddTool,
           gitCommitTool: tools.gitCommitTool,
-          gitPushTool: tools.gitPushTool,
           githubCreatePRTool: tools.githubCreatePRTool,
         },
         stopWhen: stepCountIs(50),
-        onStepFinish: ({ text, toolCalls, toolResults, finishReason, usage }) => {
+        onStepFinish: ({
+          text,
+          toolCalls,
+          toolResults,
+          finishReason,
+          usage,
+        }) => {
           logger.info("Sub-agent step completed", {
             executionId,
             textPreview: text ? text.substring(0, 200) : "(no text)",
@@ -728,7 +808,7 @@ When implementing the feature flag conditional, use the provided test variant te
             const lastReported = reportedStages.get(stage);
 
             // Report if never reported or cooldown has passed
-            if (!lastReported || (now - lastReported) > STAGE_COOLDOWN_MS) {
+            if (!lastReported || now - lastReported > STAGE_COOLDOWN_MS) {
               progressStore.update(executionId, stage);
               reportedStages.set(stage, now);
             }
@@ -739,16 +819,17 @@ When implementing the feature flag conditional, use the provided test variant te
             logger.info(`Sub-agent tool call ${idx + 1}`, {
               executionId,
               toolName: call.toolName,
-              args: 'args' in call ? call.args : call,
+              args: "args" in call ? call.args : call,
             });
           });
 
           // Log each tool result in detail
           toolResults?.forEach((result, idx) => {
-            const resultValue = 'result' in result ? result.result : result;
-            const resultPreview = typeof resultValue === 'string'
-              ? resultValue.substring(0, 500)
-              : JSON.stringify(resultValue).substring(0, 500);
+            const resultValue = "result" in result ? result.result : result;
+            const resultPreview =
+              typeof resultValue === "string"
+                ? resultValue.substring(0, 500)
+                : JSON.stringify(resultValue).substring(0, 500);
 
             logger.info(`Sub-agent tool result ${idx + 1}`, {
               executionId,
@@ -782,10 +863,13 @@ When implementing the feature flag conditional, use the provided test variant te
     } catch (error) {
       logger.error("Failed to update experiment code", {
         executionId,
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-        } : String(error),
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+              }
+            : String(error),
         githubUrl,
         featureFlagKey,
       });
@@ -793,14 +877,20 @@ When implementing the feature flag conditional, use the provided test variant te
       // Mark as complete with error
       progressStore.complete(executionId, false);
 
-      throw new Error(`Code update failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Code update failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       // Clean up Docker container
       try {
         logger.info("Cleaning up Docker container", { executionId });
+        const docker = await getDockerModule();
         await docker.destroyContainer(executionId);
       } catch (cleanupError) {
-        logger.error("Failed to cleanup Docker container", { executionId, error: cleanupError });
+        logger.error("Failed to cleanup Docker container", {
+          executionId,
+          error: cleanupError,
+        });
         // Don't throw - we don't want cleanup errors to mask the actual error
       }
     }

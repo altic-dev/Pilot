@@ -17,5 +17,16 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Set working directory
 WORKDIR /workspace
 
-# Keep container running
+# Create entrypoint script to authenticate GitHub CLI with token
+RUN cat > /entrypoint.sh << 'EOF'
+#!/bin/sh
+if [ -n "$GITHUB_TOKEN" ]; then
+  echo "$GITHUB_TOKEN" | gh auth login --with-token
+fi
+exec "$@"
+EOF
+
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["tail", "-f", "/dev/null"]
