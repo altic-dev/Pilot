@@ -189,7 +189,7 @@ This should be the FIRST tool called when a user provides a GitHub repository UR
       sessionStore.updateSession(sessionId, {
         buildStatus: 'running',
         previewReady: true,
-        previewPort: hostPort, // Use direct container port (no proxy)
+        previewPort: hostPort,
         pickerInjected: injectionResult.success,
         modifiedFiles: injectionResult.filesModified,
       });

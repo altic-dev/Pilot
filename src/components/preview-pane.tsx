@@ -180,8 +180,7 @@ export function PreviewPane({ sessionId, previewPort, onComponentSelected }: Pre
         if (bodyText.includes('Cannot GET') ||
             bodyText.includes('404') ||
             bodyText.includes('502') ||
-            bodyHTML.includes('502 Bad Gateway') ||
-            bodyHTML.includes('Proxy error')) {
+            bodyHTML.includes('502 Bad Gateway')) {
           console.error('[PreviewPane] Iframe loaded with error content:', bodyText.substring(0, 200));
           setError('Preview loaded but server returned an error. Check if the dev server is running correctly.');
           return;
