@@ -263,6 +263,63 @@ function formatTextVariationOutput(output: any) {
   );
 }
 
+function formatRepoSetupInput(input: any) {
+  return (
+    <div className="space-y-2">
+      {input?.repoUrl && (
+        <div className="flex items-start gap-2">
+          <span className="text-sm text-gray-400 min-w-[120px]">Repository URL:</span>
+          <a
+            href={input.repoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-400 hover:text-blue-300 underline break-all"
+          >
+            {input.repoUrl}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatRepoSetupOutput(output: any) {
+  return (
+    <div className="space-y-2">
+      {output?.repoName && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-400">Repository:</span>
+          <span className="text-sm text-gray-200 font-medium">{output.repoName}</span>
+        </div>
+      )}
+      {output?.framework && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-400">Framework:</span>
+          <span className="text-sm text-gray-200">{output.framework}</span>
+        </div>
+      )}
+      {output?.previewUrl && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-400">Preview URL:</span>
+          <a
+            href={output.previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-400 hover:text-blue-300 underline"
+          >
+            {output.previewUrl}
+          </a>
+        </div>
+      )}
+      {output?.message && (
+        <div className="mt-3 pt-3 border-t border-[#2a2a2a]">
+          <p className="text-sm text-gray-300">{output.message}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Main component
 export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation }) {
   const [isOpen, setIsOpen] = useState(true);
@@ -393,6 +450,8 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
         return formatExperimentCodeUpdateInput(invocation.input);
       case "textVariation":
         return formatTextVariationInput(invocation.input);
+      case "repoSetup":
+        return formatRepoSetupInput(invocation.input);
       default:
         return (
           <div className="text-sm text-gray-300">
@@ -417,6 +476,8 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
         return formatExperimentCodeUpdateOutput(invocation.output);
       case "textVariation":
         return formatTextVariationOutput(invocation.output);
+      case "repoSetup":
+        return formatRepoSetupOutput(invocation.output);
       default:
         return (
           <div className="text-sm text-gray-300">

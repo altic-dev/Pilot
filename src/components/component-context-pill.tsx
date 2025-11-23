@@ -16,6 +16,97 @@ interface ComponentContextPillProps {
   onClear: () => void;
 }
 
+/**
+ * Capitalize first letter of each word
+ */
+function capitalizeWords(text: string): string {
+  return text.split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Generate a simple, user-friendly 2-3 word label for the component
+ */
+function generateComponentLabel(component: ComponentInfo): string {
+  // Priority 1: Use aria-label (most semantic)
+  if (component.ariaLabel) {
+    return capitalizeWords(component.ariaLabel);
+  }
+
+  // Priority 2: Use title attribute
+  if (component.title) {
+    return capitalizeWords(component.title);
+  }
+
+  // Priority 3: For inputs, use placeholder or type
+  if (component.tagName === 'input') {
+    if (component.placeholder) {
+      return `${capitalizeWords(component.placeholder.slice(0, 20))} Input`;
+    }
+    if (component.type) {
+      return `${capitalizeWords(component.type)} Input`;
+    }
+    return 'Text Input';
+  }
+
+  // Priority 4: For images, use descriptive name
+  if (component.tagName === 'img') {
+    if (component.className?.includes('hero')) return 'Hero Image';
+    if (component.className?.includes('logo')) return 'Logo';
+    if (component.className?.includes('avatar')) return 'Avatar';
+    if (component.className?.includes('icon')) return 'Icon';
+    return 'Image';
+  }
+
+  // Priority 5: For buttons, combine text with "Button"
+  if (component.tagName === 'button' || component.type === 'submit' || component.type === 'button') {
+    if (component.text && component.text.trim().length > 0) {
+      const buttonText = component.text.trim().split(/\s+/).slice(0, 2).join(' ');
+      return `${capitalizeWords(buttonText)} Button`;
+    }
+    return 'Button';
+  }
+
+  // Priority 6: Meaningful component names (not generic HTML tags)
+  const genericTags = ['div', 'span', 'section', 'article', 'main', 'aside'];
+  if (component.componentName &&
+      !genericTags.includes(component.componentName.toLowerCase())) {
+    return component.componentName;
+  }
+
+  // Priority 7: Use first 2-3 words of text content
+  if (component.text && component.text.trim().length > 0) {
+    const words = component.text.trim().split(/\s+/).slice(0, 3).join(' ');
+    if (words.length > 0 && words.length < 40) {
+      return capitalizeWords(words);
+    }
+  }
+
+  // Priority 8: Fallback based on tag name
+  const tagLabels: Record<string, string> = {
+    'a': 'Link',
+    'textarea': 'Text Area',
+    'select': 'Dropdown',
+    'header': 'Header',
+    'footer': 'Footer',
+    'nav': 'Navigation',
+    'h1': 'Main Heading',
+    'h2': 'Subheading',
+    'h3': 'Section Heading',
+    'h4': 'Heading',
+    'h5': 'Heading',
+    'h6': 'Heading',
+    'form': 'Form',
+    'table': 'Table',
+    'ul': 'List',
+    'ol': 'List',
+    'li': 'List Item',
+  };
+
+  return tagLabels[component.tagName] || 'Component';
+}
+
 export function ComponentContextPill({
   component,
   onClear,
@@ -71,28 +162,31 @@ export function ComponentContextPill({
             </button>
           </div>
 
-          {/* Main info */}
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="font-mono text-sm font-bold text-white">
-              &lt;{component.componentName}&gt;
+          {/* Main info - Simple user-friendly label */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-white">
+              {generateComponentLabel(component)}
             </span>
-            {displayText && (
-              <span className="text-sm text-gray-300 italic">
-                "{displayText}"
+            {component.text && component.text.length > 30 && (
+              <span className="text-xs text-gray-400">
+                • {component.text.slice(0, 40)}...
               </span>
             )}
           </div>
 
-          {/* Hierarchy */}
-          {hierarchyText && (
-            <div className="mt-1 text-xs text-gray-400 font-mono truncate">
-              {hierarchyText}
-            </div>
-          )}
-
           {/* Expanded details */}
           {expanded && (
             <div className="mt-3 space-y-2 text-xs">
+              {/* Hierarchy */}
+              {hierarchyText && (
+                <div className="bg-black/30 rounded p-2">
+                  <div className="text-gray-400">
+                    <span className="text-blue-400 font-semibold">Hierarchy:</span>{" "}
+                    <code className="text-gray-300">{hierarchyText}</code>
+                  </div>
+                </div>
+              )}
+
               {/* DOM Info */}
               <div className="bg-black/30 rounded p-2 space-y-1">
                 <div className="text-gray-400">
