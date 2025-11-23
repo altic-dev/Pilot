@@ -16,9 +16,11 @@ function ChatContent() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [previewPort, setPreviewPort] = useState<number | null>(null);
   const [selectedComponent, setSelectedComponent] = useState<ComponentInfo | null>(null);
+  const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialMessageSent = useRef(false);
 
@@ -64,9 +66,28 @@ function ChatContent() {
     }
   }, [initialQuery, messages.length, sendMessage]);
 
+  // Handle scroll event to detect if user is at bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      // Consider user at bottom if within 100px
+      setIsUserAtBottom(distanceFromBottom < 100);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Auto-scroll to bottom only if user is at bottom
+  useEffect(() => {
+    if (isUserAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isUserAtBottom]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -117,7 +138,7 @@ function ChatContent() {
       {/* Left: Chat Panel */}
       <div className="flex flex-col w-[40%] border-r border-[#2a2a2a]">
         {/* Messages container */}
-        <div className="flex-1 overflow-y-auto px-4 py-8">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-8">
           <div className="max-w-full mx-auto space-y-6">
           {messages.map((message) => (
             <div
