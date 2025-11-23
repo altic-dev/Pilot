@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { ChevronRight, ChevronDown, File, Folder } from "lucide-react";
 
 interface FileEntry {
@@ -89,7 +89,7 @@ export function FileBrowser({ sessionId }: FileBrowserProps) {
     }
   };
 
-  const renderTree = (parentPath: string, level: number = 0): JSX.Element[] => {
+  const renderTree = (parentPath: string, level: number = 0): React.JSX.Element[] => {
     const children = files.filter((f) => {
       const fDir = f.path.substring(0, f.path.lastIndexOf("/"));
       return fDir === parentPath;

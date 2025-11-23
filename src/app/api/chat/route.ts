@@ -29,9 +29,9 @@ export async function POST(request: Request) {
 
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === "user") {
-    const textContent = lastMessage.parts
-      ?.find((part: any) => part.type === "text")
-      ?.text;
+    const textPart = lastMessage.parts
+      ?.find((part: any) => part.type === "text") as any;
+    const textContent = textPart?.text;
 
     if (textContent) {
       const componentMatch = textContent.match(
