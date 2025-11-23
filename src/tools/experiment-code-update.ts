@@ -709,15 +709,23 @@ export const experimentCodeUpdateTool = tool({
       .describe(
         "The text variation to use for the test variant. This will be displayed when the feature flag returns 'test'.",
       ),
+    sessionId: z
+      .string()
+      .optional()
+      .describe(
+        "Optional session ID to use an existing Docker container. If provided, the tool will use the existing container and NOT destroy it after completion.",
+      ),
   }),
   execute: async ({
     githubUrl,
     featureFlagKey,
     hypothesis,
     copyVariant,
+    sessionId: providedSessionId,
   }): Promise<string> => {
-    // Generate unique execution ID (also used as session ID for Docker)
-    const executionId = crypto.randomUUID();
+    // Use provided sessionId or generate a new one
+    const executionId = providedSessionId || crypto.randomUUID();
+    const isExistingContainer = !!providedSessionId;
 
     // Create input hash for tracking
     const inputHash = crypto
@@ -734,22 +742,29 @@ export const experimentCodeUpdateTool = tool({
       featureFlagKey,
       hypothesis: hypothesis.substring(0, 100),
       copyVariant: copyVariant.substring(0, 100),
+      isExistingContainer,
     });
 
     // Create progress execution with input hash mapping
     progressStore.create(executionId, inputHash);
-    progressStore.update(executionId, "Creating Docker container...");
 
-    // Create Docker container for this session
-    try {
-      const docker = await getDockerModule();
-      await docker.createContainer(executionId);
-      logger.info("Docker container created", { executionId });
-      progressStore.update(executionId, "Starting experiment code update...");
-    } catch (error) {
-      logger.error("Failed to create Docker container", { executionId, error });
-      progressStore.complete(executionId, false);
-      throw new Error(`Failed to create Docker container: ${error}`);
+    // Create Docker container only if not using existing one
+    if (!isExistingContainer) {
+      progressStore.update(executionId, "Creating Docker container...");
+
+      try {
+        const docker = await getDockerModule();
+        await docker.createContainer(executionId);
+        logger.info("Docker container created", { executionId });
+        progressStore.update(executionId, "Starting experiment code update...");
+      } catch (error) {
+        logger.error("Failed to create Docker container", { executionId, error });
+        progressStore.complete(executionId, false);
+        throw new Error(`Failed to create Docker container: ${error}`);
+      }
+    } else {
+      logger.info("Using existing Docker container", { executionId });
+      progressStore.update(executionId, "Using existing container for experiment code update...");
     }
 
     try {
@@ -881,17 +896,21 @@ When implementing the feature flag conditional, use the provided test variant te
         `Code update failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
-      // Clean up Docker container
-      try {
-        logger.info("Cleaning up Docker container", { executionId });
-        const docker = await getDockerModule();
-        await docker.destroyContainer(executionId);
-      } catch (cleanupError) {
-        logger.error("Failed to cleanup Docker container", {
-          executionId,
-          error: cleanupError,
-        });
-        // Don't throw - we don't want cleanup errors to mask the actual error
+      // Clean up Docker container only if we created it
+      if (!isExistingContainer) {
+        try {
+          logger.info("Cleaning up Docker container", { executionId });
+          const docker = await getDockerModule();
+          await docker.destroyContainer(executionId);
+        } catch (cleanupError) {
+          logger.error("Failed to cleanup Docker container", {
+            executionId,
+            error: cleanupError,
+          });
+          // Don't throw - we don't want cleanup errors to mask the actual error
+        }
+      } else {
+        logger.info("Preserving existing Docker container", { executionId });
       }
     }
   },

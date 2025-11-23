@@ -10,6 +10,7 @@ import {
   posthogExperimentCreationTool,
   experimentCodeUpdateTool,
   textVariationTool,
+  repoSetupTool,
 } from "@/tools";
 import systemPrompt from "@/prompts/system-prompt.md";
 import { logger } from "@/lib/logger";
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     model: anthropic("claude-sonnet-4-5"),
     messages: convertToModelMessages(messages),
     tools: {
+      repoSetup: repoSetupTool,
       projectRetrieval: posthogProjectRetrievalTool,
       textVariation: textVariationTool,
       experimentCreation: posthogExperimentCreationTool,

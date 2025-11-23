@@ -47,11 +47,26 @@ async function ensureImageExists(): Promise<void> {
 /**
  * Create a new container for a chat session
  */
-export async function createContainer(sessionId: string): Promise<Docker.Container> {
+export async function createContainer(
+  sessionId: string,
+  options?: { portMappings?: Record<number, number> }
+): Promise<Docker.Container> {
   try {
-    logger.info('Creating Docker container', { sessionId });
+    logger.info('Creating Docker container', { sessionId, portMappings: options?.portMappings });
 
     await ensureImageExists();
+
+    // Build port bindings if provided
+    const portBindings: Record<string, Array<{ HostPort: string }>> = {};
+    const exposedPorts: Record<string, object> = {};
+
+    if (options?.portMappings) {
+      for (const [containerPort, hostPort] of Object.entries(options.portMappings)) {
+        const portKey = `${containerPort}/tcp`;
+        portBindings[portKey] = [{ HostPort: String(hostPort) }];
+        exposedPorts[portKey] = {};
+      }
+    }
 
     const container = await docker.createContainer({
       Image: 'pilot-agent:latest',
@@ -60,6 +75,7 @@ export async function createContainer(sessionId: string): Promise<Docker.Contain
         `GITHUB_TOKEN=${process.env.GITHUB_TOKEN || ''}`,
       ],
       WorkingDir: '/workspace',
+      ExposedPorts: Object.keys(exposedPorts).length > 0 ? exposedPorts : undefined,
       HostConfig: {
         AutoRemove: false,
         Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
@@ -67,6 +83,7 @@ export async function createContainer(sessionId: string): Promise<Docker.Contain
         CpuPeriod: 100000,
         CpuQuota: 200000, // 2 CPU cores max
         NetworkMode: 'bridge',
+        PortBindings: Object.keys(portBindings).length > 0 ? portBindings : undefined,
       },
       AttachStdout: true,
       AttachStderr: true,
@@ -189,6 +206,66 @@ export async function readFile(sessionId: string, filePath: string): Promise<str
   } catch (error) {
     logger.error('Failed to read file from container', { sessionId, filePath, error });
     throw new Error(`Failed to read file: ${error}`);
+  }
+}
+
+/**
+ * List directory contents in the container
+ */
+export interface FileEntry {
+  name: string;
+  type: 'file' | 'directory';
+  size: number;
+  path: string;
+}
+
+export async function listDirectory(sessionId: string, dirPath: string): Promise<FileEntry[]> {
+  const container = containerCache.get(sessionId);
+  if (!container) {
+    throw new Error(`No container found for session: ${sessionId}`);
+  }
+
+  try {
+    // Use ls command to list directory contents
+    const result = await execCommand(sessionId, ['ls', '-la', '--color=never', dirPath]);
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to list directory: ${result.stderr}`);
+    }
+
+    const entries: FileEntry[] = [];
+    const lines = result.stdout.split('\n').filter(line => line.trim());
+
+    // Skip first line (total) and parse each entry
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      const parts = line.split(/\s+/);
+
+      if (parts.length < 9) continue;
+
+      const permissions = parts[0];
+      const name = parts.slice(8).join(' ');
+
+      // Skip . and ..
+      if (name === '.' || name === '..') continue;
+
+      const isDirectory = permissions.startsWith('d');
+      const size = parseInt(parts[4], 10) || 0;
+      const fullPath = `${dirPath}/${name}`.replace(/\/+/g, '/');
+
+      entries.push({
+        name,
+        type: isDirectory ? 'directory' : 'file',
+        size,
+        path: fullPath,
+      });
+    }
+
+    logger.info('Directory listed', { sessionId, dirPath, entries: entries.length });
+    return entries;
+  } catch (error) {
+    logger.error('Failed to list directory', { sessionId, dirPath, error });
+    throw new Error(`Failed to list directory: ${error}`);
   }
 }
 

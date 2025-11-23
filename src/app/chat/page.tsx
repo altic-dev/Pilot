@@ -7,9 +7,12 @@ import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolInvocation } from "@/components/tool-invocation";
+import { PreviewPane } from "@/components/preview-pane";
 
 function ChatContent() {
   const [input, setInput] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [previewPort, setPreviewPort] = useState<number | null>(null);
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -21,6 +24,28 @@ function ChatContent() {
       api: "/api/chat",
     }),
   });
+
+  // Extract sessionId and previewPort from tool invocations
+  useEffect(() => {
+    for (const message of messages) {
+      for (const part of message.parts) {
+        // Check if this is a completed repoSetup tool invocation
+        if (
+          typeof part.type === "string" &&
+          part.type === "tool-repoSetup" &&
+          (part as any).state === "output-available"
+        ) {
+          const output = (part as any).output;
+
+          if (output?.sessionId) {
+            setSessionId(output.sessionId);
+            setPreviewPort(output.previewPort);
+            break;
+          }
+        }
+      }
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (initialQuery && messages.length === 0 && !initialMessageSent.current) {
@@ -74,10 +99,12 @@ function ChatContent() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-black">
-      {/* Messages container */}
-      <div className="flex-1 overflow-y-auto px-4 py-8">
-        <div className="max-w-3xl mx-auto space-y-6">
+    <div className="flex h-screen bg-black">
+      {/* Left: Chat Panel */}
+      <div className="flex flex-col w-[40%] border-r border-[#2a2a2a]">
+        {/* Messages container */}
+        <div className="flex-1 overflow-y-auto px-4 py-8">
+          <div className="max-w-full mx-auto space-y-6">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -165,48 +192,63 @@ function ChatContent() {
         </div>
       </div>
 
-      {/* Input container */}
-      <div className="border-t border-[#2a2a2a] bg-black px-4 py-4">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-          <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={status !== "ready"}
-              placeholder="Send a message..."
-              rows={1}
-              className="w-full bg-transparent text-white placeholder-[#666666] outline-none text-sm resize-none overflow-hidden"
-              style={{
-                minHeight: "24px",
-              }}
-            />
+        {/* Input container */}
+        <div className="border-t border-[#2a2a2a] bg-black px-4 py-4">
+          <form onSubmit={handleSubmit} className="max-w-full mx-auto">
+            <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={status !== "ready"}
+                placeholder="Send a message..."
+                rows={1}
+                className="w-full bg-transparent text-white placeholder-[#666666] outline-none text-sm resize-none overflow-hidden"
+                style={{
+                  minHeight: "24px",
+                }}
+              />
 
-            {/* Bottom bar with send button */}
-            <div className="flex items-center justify-end mt-3">
-              <button
-                type="submit"
-                disabled={!input.trim() || status !== "ready"}
-                className="p-1.5 rounded-full border border-[#3a3a3a] bg-transparent text-[#888888] hover:text-white hover:border-[#4a4a4a] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              {/* Bottom bar with send button */}
+              <div className="flex items-center justify-end mt-3">
+                <button
+                  type="submit"
+                  disabled={!input.trim() || status !== "ready"}
+                  className="p-1.5 rounded-full border border-[#3a3a3a] bg-transparent text-[#888888] hover:text-white hover:border-[#4a4a4a] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 10l7-7m0 0l7 7m-7-7v18"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 10l7-7m0 0l7 7m-7-7v18"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
+      </div>
+
+      {/* Right: Preview Panel */}
+      <div className="flex flex-col w-[60%]">
+        {/* Preview Content */}
+        <div className="flex-1 overflow-hidden">
+          {sessionId && previewPort ? (
+            <PreviewPane sessionId={sessionId} previewPort={previewPort} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-gray-400 bg-[#0a0a0a]">
+              <p>No preview available. Provide a GitHub URL to get started.</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
