@@ -13,6 +13,7 @@
     "@ai-sdk/openai": "^2.0.14",
     "@ai-sdk/react": "^2.0.59",
     "@ai-sdk/vercel": "^1.0.15",
+    "@morphllm/morphsdk": "^0.2.52",
     "ai": "^5.0.59",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

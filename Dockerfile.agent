@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     openssh-client \
     build-base \
     python3 \
+    ripgrep \
     github-cli
 
 # Install pnpm globally

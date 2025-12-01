@@ -6,8 +6,12 @@ import OpenAI from "openai";
 import crypto from "crypto";
 import { progressStore } from "@/lib/progress-store";
 import fileUpdateToolDescription from "./file-update-tool.md";
+import { MorphClient } from "@morphllm/morphsdk";
+import { DockerRipgrepProvider } from "@/lib/docker-ripgrep-provider";
 
-const morphClient = new OpenAI({
+const morphClient = new MorphClient({ apiKey: process.env.MORPH_LLM_API_KEY });
+
+const morphOpenAIClient = new OpenAI({
   apiKey: process.env.MORPH_LLM_API_KEY,
   baseURL: "https://api.morphllm.com/v1",
 });
@@ -50,7 +54,6 @@ async function createDockerTools(sessionId: string) {
 
       const allowedCommands = [
         "ls",
-        "grep",
         "cat",
         "find",
         "git",
@@ -274,7 +277,7 @@ async function createDockerTools(sessionId: string) {
       });
 
       try {
-        const response = await morphClient.chat.completions.create({
+        const response = await morphOpenAIClient.chat.completions.create({
           model: "morph-v3-fast",
           messages: [
             {
@@ -306,6 +309,40 @@ async function createDockerTools(sessionId: string) {
                 }
               : String(error),
         });
+        throw error;
+      }
+    },
+  });
+
+  const grepTool = tool({
+    description: "Search for relevant files to make the code changes",
+    inputSchema: z.object({
+      query: z
+        .string()
+        .describe("Natural language query to search the codebase"),
+    }),
+    execute: async ({ query }) => {
+      logger.info("Grep tool executing", { sessionId, query });
+
+      try {
+        const provider = new DockerRipgrepProvider(sessionId);
+
+        const result = await morphClient.warpGrep.execute({
+          query: query,
+          repoRoot: ".",
+          provider: provider,
+        });
+
+        logger.info("Grep tool completed", {
+          sessionId,
+          query,
+          success: result.success,
+          contextsCount: result.contexts?.length || 0,
+        });
+
+        return result;
+      } catch (error) {
+        logger.error("Grep tool failed", { sessionId, query, error });
         throw error;
       }
     },
@@ -431,6 +468,7 @@ async function createDockerTools(sessionId: string) {
     bash: bashTool,
     textEditorTool,
     fileUpdateTool,
+    grepTool,
     gitCloneTool,
     gitAddTool,
     gitCommitTool,
@@ -449,6 +487,12 @@ function detectProgressStage(toolCalls: any[], text: string): string | null {
       lowerText.includes("gh repo clone")
     ) {
       return "Cloning repository...";
+    } else if (
+      lowerText.includes("searching") ||
+      lowerText.includes("locating files") ||
+      lowerText.includes("finding")
+    ) {
+      return "Searching codebase...";
     } else if (
       lowerText.includes("analyzing") ||
       lowerText.includes("reading package.json") ||
@@ -475,6 +519,8 @@ function detectProgressStage(toolCalls: any[], text: string): string | null {
       return "Committing changes...";
     } else if (call.toolName === "githubCreatePRTool") {
       return "Creating pull request...";
+    } else if (call.toolName === "grepTool") {
+      return "Searching codebase...";
     } else if (call.toolName === "bash") {
       const command = "args" in call ? call.args?.command : call.command;
       if (!command) continue;
@@ -550,7 +596,10 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
    - Check for package-lock.json → use npm
    - Run install command if node_modules is missing
 
-4. **Locate Target Files**: Locate target files based on the hypothesis
+4. **Locate Target Files**: Use **grepTool** to intelligently search for files based on the hypothesis
+   - Use natural language queries like "find the main landing page component" or "locate button text for signup"
+   - The grepTool uses AI-powered code search to find relevant files and code sections
+   - Prefer grepTool over bash grep/find commands for better accuracy
 
 5. **Install PostHog SDK**: Install appropriate PostHog SDK if needed (using the detected package manager)
 
@@ -640,8 +689,15 @@ When a test variant text is provided:
 
 ## Available Tools
 
+### Code Search Tool (PREFERRED for finding files)
+- **grepTool**: AI-powered intelligent code search using natural language queries
+  - Use this to locate files and code sections relevant to your task
+  - Example queries: "find the main landing page component", "locate authentication logic", "search for button text"
+  - Returns relevant code contexts with file paths and line numbers
+  - PREFER this over bash grep/find commands for better accuracy and understanding
+
 ### File & Command Execution Tools
-- **bash**: Execute bash commands (ls, grep, cat, find, git, mkdir, cd, npm, pnpm, gh only) - runs inside Docker container
+- **bash**: Execute bash commands (ls, cat, find, git, mkdir, cd, npm, pnpm, gh only) - runs inside Docker container
 - **textEditorTool**: View, create, and edit files in the container
 - **fileUpdateTool**: Apply intelligent code merges using MorphLLM
 
@@ -651,7 +707,10 @@ When a test variant text is provided:
 - **gitCommitTool**: Create a commit with staged changes
 - **githubCreatePRTool**: Create a GitHub Pull Request using gh CLI (automatically pushes unpushed commits)
 
-**IMPORTANT**: Use the dedicated git tools (gitCloneTool, gitAddTool, gitCommitTool, githubCreatePRTool) instead of running git commands through bash. They provide better error handling and logging.
+**IMPORTANT**:
+- Use **grepTool** for searching code and locating files instead of bash grep/find commands
+- Use the dedicated git tools (gitCloneTool, gitAddTool, gitCommitTool, githubCreatePRTool) instead of running git commands through bash
+- These specialized tools provide better error handling, logging, and accuracy
 
 ## Critical Requirements
 
@@ -758,13 +817,19 @@ export const experimentCodeUpdateTool = tool({
         logger.info("Docker container created", { executionId });
         progressStore.update(executionId, "Starting experiment code update...");
       } catch (error) {
-        logger.error("Failed to create Docker container", { executionId, error });
+        logger.error("Failed to create Docker container", {
+          executionId,
+          error,
+        });
         progressStore.complete(executionId, false);
         throw new Error(`Failed to create Docker container: ${error}`);
       }
     } else {
       logger.info("Using existing Docker container", { executionId });
-      progressStore.update(executionId, "Using existing container for experiment code update...");
+      progressStore.update(
+        executionId,
+        "Using existing container for experiment code update...",
+      );
     }
 
     try {
@@ -795,6 +860,7 @@ When implementing the feature flag conditional, use the provided test variant te
           bash: tools.bash,
           fileUpdateTool: tools.fileUpdateTool,
           textEditorTool: tools.textEditorTool,
+          grepTool: tools.grepTool,
           gitCloneTool: tools.gitCloneTool,
           gitAddTool: tools.gitAddTool,
           gitCommitTool: tools.gitCommitTool,
