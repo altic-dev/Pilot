@@ -1,4 +1,9 @@
-import type { WarpGrepProvider } from "@morphllm/morphsdk";
+import type {
+  WarpGrepProvider,
+  GrepResult,
+  ReadResult,
+  AnalyseEntry,
+} from "@morphllm/morphsdk";
 import * as docker from "./docker";
 
 export class DockerRipgrepProvider implements WarpGrepProvider {
@@ -7,7 +12,7 @@ export class DockerRipgrepProvider implements WarpGrepProvider {
     private workDir: string = "/workspace",
   ) {}
 
-  async grep(params: { pattern: string; path: string }) {
+  async grep(params: { pattern: string; path: string }): Promise<GrepResult> {
     const args = [
       "/bin/sh",
       "-c",
@@ -43,7 +48,11 @@ export class DockerRipgrepProvider implements WarpGrepProvider {
     }
   }
 
-  async read(params: { path: string; start?: number; end?: number }) {
+  async read(params: {
+    path: string;
+    start?: number;
+    end?: number;
+  }): Promise<ReadResult> {
     const start = params.start ?? 1;
     const end = params.end ?? 1000000;
 
@@ -118,7 +127,7 @@ export class DockerRipgrepProvider implements WarpGrepProvider {
     pattern?: string | null;
     maxResults?: number;
     maxDepth?: number;
-  }) {
+  }): Promise<AnalyseEntry[]> {
     const pattern = params.pattern ?? "*";
     const maxResults = params.maxResults ?? 100;
 

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { streamText, stepCountIs, tool } from "ai";
 import { logger } from "@/lib/logger";
 import { anthropic } from "@ai-sdk/anthropic";
-import OpenAI from "openai";
 import crypto from "crypto";
 import { progressStore } from "@/lib/progress-store";
 import fileUpdateToolDescription from "./file-update-tool.md";
@@ -10,11 +9,6 @@ import { MorphClient } from "@morphllm/morphsdk";
 import { DockerRipgrepProvider } from "@/lib/docker-ripgrep-provider";
 
 const morphClient = new MorphClient({ apiKey: process.env.MORPH_LLM_API_KEY });
-
-const morphOpenAIClient = new OpenAI({
-  apiKey: process.env.MORPH_LLM_API_KEY,
-  baseURL: "https://api.morphllm.com/v1",
-});
 
 // Helper to dynamically import docker module (server-side only)
 async function getDockerModule() {
@@ -277,23 +271,23 @@ async function createDockerTools(sessionId: string) {
       });
 
       try {
-        const response = await morphOpenAIClient.chat.completions.create({
-          model: "morph-v3-fast",
-          messages: [
-            {
-              role: "user",
-              content: `<instruction>${instruction}</instruction>\n<code>${code}</code>\n<update>${codeEdit}</update>`,
-            },
-          ],
+        const response = await morphClient.fastApply.applyEdit({
+          instructions: instruction,
+          codeEdit: codeEdit,
+          originalCode: code,
         });
 
-        const mergedCode = response.choices[0].message.content;
+        const mergedCode = response.mergedCode;
         logger.info("File update tool completed", {
           sessionId,
           instruction,
           originalCodeLength: code.length,
           mergedCodeLength: mergedCode?.length || 0,
         });
+
+        if (!mergedCode) {
+          throw new Error("Merged code is empty");
+        }
 
         return mergedCode;
       } catch (error) {
