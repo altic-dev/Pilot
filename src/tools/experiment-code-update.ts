@@ -7,6 +7,11 @@ import { progressStore } from "@/lib/progress-store";
 import fileUpdateToolDescription from "./file-update-tool.md";
 import { MorphClient } from "@morphllm/morphsdk";
 import { DockerRipgrepProvider } from "@/lib/docker-ripgrep-provider";
+import { getModel, ModelProvider } from "@/lib/model-provider";
+import {
+  createGenericBashTool,
+  createGenericTextEditorTool,
+} from "@/lib/generic-tools";
 
 const morphClient = new MorphClient({ apiKey: process.env.MORPH_LLM_API_KEY });
 
@@ -40,212 +45,237 @@ function createToolWithParsedArgs(tool: any) {
 /**
  * Create tools that operate within a Docker container
  */
-async function createDockerTools(sessionId: string) {
+async function createDockerTools(
+  sessionId: string,
+  modelProvider: ModelProvider,
+) {
   const docker = await getDockerModule();
-  const bashTool = anthropic.tools.bash_20250124({
-    execute: async ({ command, restart }) => {
-      logger.info("Docker bash tool executing command", { sessionId, command });
 
-      const allowedCommands = [
-        "ls",
-        "cat",
-        "find",
-        "git",
-        "mkdir",
-        "cd",
-        "npm",
-        "pnpm",
-        "gh",
-      ];
-      const forbiddenGitConfigPatterns = [
-        "git config user.email",
-        "git config --global user.email",
-        "git config user.name",
-        "git config --global user.name",
-      ];
-      const baseCommand = command.trim().split(/\s+/)[0];
+  // Create command executor for bash tool
+  const executeCommand = async (command: string) => {
+    logger.info("Docker bash tool executing command", { sessionId, command });
 
-      if (!allowedCommands.includes(baseCommand)) {
-        const errorMsg = `Command '${baseCommand}' is not allowed. Only ${allowedCommands.join(", ")} are permitted.`;
-        logger.error("Docker bash tool command not allowed", {
-          sessionId,
-          command,
-          baseCommand,
-          allowedCommands,
-        });
-        throw new Error(errorMsg);
-      }
+    const allowedCommands = [
+      "ls",
+      "cat",
+      "find",
+      "git",
+      "mkdir",
+      "cd",
+      "npm",
+      "pnpm",
+      "gh",
+    ];
+    const forbiddenGitConfigPatterns = [
+      "git config user.email",
+      "git config --global user.email",
+      "git config user.name",
+      "git config --global user.name",
+    ];
+    const baseCommand = command.trim().split(/\s+/)[0];
 
-      if (
-        forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))
-      ) {
-        const errorMsg =
-          "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
-        logger.error("Docker bash tool command forbidden", {
-          sessionId,
-          command,
-          forbiddenPatterns: forbiddenGitConfigPatterns,
-        });
-        throw new Error(errorMsg);
-      }
-
-      try {
-        const { stdout, stderr, exitCode } = await docker.execCommand(
-          sessionId,
-          ["/bin/sh", "-c", command],
-        );
-
-        const output = stdout || stderr;
-        logger.info("Docker bash tool command completed", {
-          sessionId,
-          command,
-          exitCode,
-          outputLength: output.length,
-          outputPreview: output.substring(0, 500),
-        });
-
-        if (exitCode !== 0 && stderr) {
-          throw new Error(stderr);
-        }
-
-        return output;
-      } catch (error) {
-        logger.error("Docker bash tool command failed", {
-          sessionId,
-          command,
-          error:
-            error instanceof Error
-              ? {
-                  message: error.message,
-                  stack: error.stack,
-                }
-              : String(error),
-        });
-        throw error;
-      }
-    },
-  });
-
-  const textEditorTool = createToolWithParsedArgs(
-    anthropic.tools.textEditor_20250728({
-      execute: async ({
+    if (!allowedCommands.includes(baseCommand)) {
+      const errorMsg = `Command '${baseCommand}' is not allowed. Only ${allowedCommands.join(", ")} are permitted.`;
+      logger.error("Docker bash tool command not allowed", {
+        sessionId,
         command,
-        path,
-        file_text,
-        old_str,
-        new_str,
-        insert_line,
-        view_range,
-      }) => {
-        logger.info("Docker text editor tool executing", {
-          sessionId,
-          command,
-          path,
-          view_range,
-        });
+        baseCommand,
+        allowedCommands,
+      });
+      throw new Error(errorMsg);
+    }
 
-        try {
-          if (command === "view") {
-            const content = await docker.readFile(sessionId, path);
-            const lines = content.split("\n");
+    if (
+      forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))
+    ) {
+      const errorMsg =
+        "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
+      logger.error("Docker bash tool command forbidden", {
+        sessionId,
+        command,
+        forbiddenPatterns: forbiddenGitConfigPatterns,
+      });
+      throw new Error(errorMsg);
+    }
 
-            if (view_range) {
-              const [start, end] = view_range;
-              const selectedLines = lines.slice(start - 1, end);
-              const result = selectedLines.join("\n");
-              logger.info("Docker text editor tool view completed", {
-                sessionId,
-                path,
-                viewRange: view_range,
-                linesReturned: selectedLines.length,
-                contentPreview: result.substring(0, 200),
-              });
-              return result;
-            }
+    try {
+      const { stdout, stderr, exitCode } = await docker.execCommand(sessionId, [
+        "/bin/sh",
+        "-c",
+        command,
+      ]);
 
-            logger.info("Docker text editor tool view completed", {
-              sessionId,
+      const output = stdout || stderr;
+      logger.info("Docker bash tool command completed", {
+        sessionId,
+        command,
+        exitCode,
+        outputLength: output.length,
+        outputPreview: output.substring(0, 500),
+      });
+
+      if (exitCode !== 0 && stderr) {
+        throw new Error(stderr);
+      }
+
+      return output;
+    } catch (error) {
+      logger.error("Docker bash tool command failed", {
+        sessionId,
+        command,
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+              }
+            : String(error),
+      });
+      throw error;
+    }
+  };
+
+  // Choose bash tool based on provider
+  const bashTool =
+    modelProvider === "claude"
+      ? anthropic.tools.bash_20250124({
+          execute: async ({ command }) => executeCommand(command),
+        })
+      : createGenericBashTool(executeCommand);
+
+  // Create file operation callbacks for text editor tool
+  const readFileCallback = async (path: string) => {
+    return await docker.readFile(sessionId, path);
+  };
+
+  const writeFileCallback = async (path: string, content: string) => {
+    await docker.writeFile(sessionId, path, content);
+  };
+
+  // Choose text editor tool based on provider
+  const textEditorTool =
+    modelProvider === "claude"
+      ? createToolWithParsedArgs(
+          anthropic.tools.textEditor_20250728({
+            execute: async ({
+              command,
               path,
-              totalLines: lines.length,
-              contentLength: content.length,
-            });
-            return content;
-          }
-
-          if (command === "create") {
-            await docker.writeFile(sessionId, path, file_text || "");
-            const result = `Created ${path}`;
-            logger.info("Docker text editor tool create completed", {
-              sessionId,
-              path,
-              fileTextLength: (file_text || "").length,
-            });
-            return result;
-          }
-
-          if (command === "str_replace") {
-            let content = await docker.readFile(sessionId, path);
-
-            if (!old_str) {
-              const error = new Error(
-                "old_str is required for str_replace command",
-              );
-              logger.error("Docker text editor tool str_replace failed", {
+              file_text,
+              old_str,
+              new_str,
+              insert_line,
+              view_range,
+            }) => {
+              logger.info("Docker text editor tool executing", {
                 sessionId,
+                command,
                 path,
-                reason: "old_str is required",
+                view_range,
               });
-              throw error;
-            }
 
-            if (!content.includes(old_str)) {
-              const error = new Error(`old_str not found in ${path}`);
-              logger.error("Docker text editor tool str_replace failed", {
-                sessionId,
-                path,
-                reason: "old_str not found",
-                oldStrPreview: old_str.substring(0, 100),
-              });
-              throw error;
-            }
+              try {
+                if (command === "view") {
+                  const content = await docker.readFile(sessionId, path);
+                  const lines = content.split("\n");
 
-            content = content.replace(old_str, new_str || "");
-            await docker.writeFile(sessionId, path, content);
-            const result = `Replaced content in ${path}`;
-            logger.info("Docker text editor tool str_replace completed", {
-              sessionId,
-              path,
-              oldStrLength: old_str.length,
-              newStrLength: (new_str || "").length,
-            });
-            return result;
-          }
-
-          const error = new Error(`Unknown command: ${command}`);
-          logger.error("Docker text editor tool unknown command", {
-            sessionId,
-            command,
-            path,
-          });
-          throw error;
-        } catch (error) {
-          logger.error("Docker text editor tool execution failed", {
-            sessionId,
-            command,
-            path,
-            error:
-              error instanceof Error
-                ? {
-                    message: error.message,
-                    stack: error.stack,
+                  if (view_range) {
+                    const [start, end] = view_range;
+                    const selectedLines = lines.slice(start - 1, end);
+                    const result = selectedLines.join("\n");
+                    logger.info("Docker text editor tool view completed", {
+                      sessionId,
+                      path,
+                      viewRange: view_range,
+                      linesReturned: selectedLines.length,
+                      contentPreview: result.substring(0, 200),
+                    });
+                    return result;
                   }
-                : String(error),
-          });
-          throw error;
-        }
-      },
-    }),
-  );
+
+                  logger.info("Docker text editor tool view completed", {
+                    sessionId,
+                    path,
+                    totalLines: lines.length,
+                    contentLength: content.length,
+                  });
+                  return content;
+                }
+
+                if (command === "create") {
+                  await docker.writeFile(sessionId, path, file_text || "");
+                  const result = `Created ${path}`;
+                  logger.info("Docker text editor tool create completed", {
+                    sessionId,
+                    path,
+                    fileTextLength: (file_text || "").length,
+                  });
+                  return result;
+                }
+
+                if (command === "str_replace") {
+                  let content = await docker.readFile(sessionId, path);
+
+                  if (!old_str) {
+                    const error = new Error(
+                      "old_str is required for str_replace command",
+                    );
+                    logger.error("Docker text editor tool str_replace failed", {
+                      sessionId,
+                      path,
+                      reason: "old_str is required",
+                    });
+                    throw error;
+                  }
+
+                  if (!content.includes(old_str)) {
+                    const error = new Error(`old_str not found in ${path}`);
+                    logger.error("Docker text editor tool str_replace failed", {
+                      sessionId,
+                      path,
+                      reason: "old_str not found",
+                      oldStrPreview: old_str.substring(0, 100),
+                    });
+                    throw error;
+                  }
+
+                  content = content.replace(old_str, new_str || "");
+                  await docker.writeFile(sessionId, path, content);
+                  const result = `Replaced content in ${path}`;
+                  logger.info("Docker text editor tool str_replace completed", {
+                    sessionId,
+                    path,
+                    oldStrLength: old_str.length,
+                    newStrLength: (new_str || "").length,
+                  });
+                  return result;
+                }
+
+                const error = new Error(`Unknown command: ${command}`);
+                logger.error("Docker text editor tool unknown command", {
+                  sessionId,
+                  command,
+                  path,
+                });
+                throw error;
+              } catch (error) {
+                logger.error("Docker text editor tool execution failed", {
+                  sessionId,
+                  command,
+                  path,
+                  error:
+                    error instanceof Error
+                      ? {
+                          message: error.message,
+                          stack: error.stack,
+                        }
+                      : String(error),
+                });
+                throw error;
+              }
+            },
+          }),
+        )
+      : createGenericTextEditorTool(readFileCallback, writeFileCallback);
 
   const fileUpdateTool = tool({
     description: fileUpdateToolDescription,
@@ -355,6 +385,7 @@ async function createDockerTools(sessionId: string) {
     execute: async ({ url, directory }) => {
       logger.info("Git clone tool executing", { sessionId, url, directory });
 
+      url = url.endsWith(".git") ? url.replace(".git", "") : url;
       const cloneCommand = directory
         ? `gh repo clone ${url} ${directory}`
         : `gh repo clone ${url}`;
@@ -768,6 +799,10 @@ export const experimentCodeUpdateTool = tool({
       .describe(
         "Optional session ID to use an existing Docker container. If provided, the tool will use the existing container and NOT destroy it after completion.",
       ),
+    modelProvider: z
+      .enum(["claude", "lmstudio"])
+      .optional()
+      .describe("AI model provider to use. Defaults to 'claude'."),
   }),
   execute: async ({
     githubUrl,
@@ -775,6 +810,7 @@ export const experimentCodeUpdateTool = tool({
     hypothesis,
     copyVariant,
     sessionId: providedSessionId,
+    modelProvider = "claude",
   }): Promise<string> => {
     // Use provided sessionId or generate a new one
     const executionId = providedSessionId || crypto.randomUUID();
@@ -796,6 +832,7 @@ export const experimentCodeUpdateTool = tool({
       hypothesis: hypothesis.substring(0, 100),
       copyVariant: copyVariant.substring(0, 100),
       isExistingContainer,
+      modelProvider,
     });
 
     // Create progress execution with input hash mapping
@@ -827,17 +864,23 @@ export const experimentCodeUpdateTool = tool({
     }
 
     try {
-      logger.info("Starting sub-agent with streamText", { executionId });
+      logger.info("Starting sub-agent with streamText", {
+        executionId,
+        modelProvider,
+      });
 
-      // Create Docker-based tools for this session
-      const tools = await createDockerTools(executionId);
+      // Create Docker-based tools for this session WITH model provider
+      const tools = await createDockerTools(executionId, modelProvider);
+
+      // Get the model instance based on provider
+      const model = getModel(modelProvider);
 
       // Track reported stages with timestamps to avoid spam but allow legitimate repeats
       const reportedStages = new Map<string, number>();
       const STAGE_COOLDOWN_MS = 2000; // Don't report same stage within 2 seconds
 
       const result = streamText({
-        model: anthropic("claude-sonnet-4-5"),
+        model, // Use selected model instead of hardcoded
         prompt: `${EXPERIMENT_CODE_UPDATE_AGENT_PROMPT}
 
 ## Your Task
@@ -870,6 +913,7 @@ When implementing the feature flag conditional, use the provided test variant te
         }) => {
           logger.info("Sub-agent step completed", {
             executionId,
+            modelProvider,
             textPreview: text ? text.substring(0, 200) : "(no text)",
             toolCallsCount: toolCalls?.length || 0,
             finishReason,

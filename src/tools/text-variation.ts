@@ -2,6 +2,7 @@ import { z } from "zod";
 import { generateText, tool, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { logger } from "@/lib/logger";
+import { getModel, ModelProvider } from "@/lib/model-provider";
 
 const VariationResponseSchema = z.object({
   variation: z.string().min(1, "variation text is required"),
@@ -61,13 +62,24 @@ export const textVariationTool = tool({
       .string()
       .optional()
       .describe("Optional: Desired tone (e.g., 'professional', 'casual', 'urgent', 'playful', 'empathetic', 'authoritative')"),
+    modelProvider: z
+      .enum(["claude", "lmstudio"])
+      .optional()
+      .describe("AI model provider to use. Defaults to 'claude'."),
   }),
-  execute: async ({ context, existingText, targetAudience, tone }): Promise<string> => {
+  execute: async ({
+    context,
+    existingText,
+    targetAudience,
+    tone,
+    modelProvider = "claude",
+  }): Promise<string> => {
     logger.info("Text variation tool invoked", {
       context: context.substring(0, 100),
       hasExistingText: !!existingText,
       targetAudience: targetAudience?.substring(0, 50),
       tone,
+      modelProvider,
     });
 
     try {
@@ -104,16 +116,20 @@ ${targetAudience}`;
 ${tone}`;
       }
 
-      logger.info("Generating text variation with Claude");
+      logger.info("Generating text variation", { modelProvider });
+
+      // Get model based on provider
+      const model = getModel(modelProvider);
 
       const result = await generateText({
-        model: anthropic("claude-sonnet-4-5"),
+        model, // Use selected model instead of hardcoded
         prompt,
         stopWhen: stepCountIs(5),
-        maxOutputTokens: 1000
+        maxOutputTokens: 1000,
       });
 
       logger.info("Text variation generated successfully", {
+        modelProvider,
         textLength: result.text.length,
         textPreview: result.text.substring(0, 200),
       });
@@ -169,13 +185,18 @@ ${tone}`;
       return JSON.stringify(validated);
     } catch (error) {
       logger.error("Failed to generate text variation", {
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-        } : String(error),
+        error: error instanceof Error
+          ? {
+              message: error.message,
+              stack: error.stack,
+            }
+          : String(error),
         context: context.substring(0, 100),
+        modelProvider,
       });
-      throw new Error(`Text variation generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Text variation generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   },
 });
