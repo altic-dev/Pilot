@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useSearchParams } from "next/navigation";
@@ -12,6 +12,40 @@ import { ComponentContextPill } from "@/components/component-context-pill";
 import { ComponentInfo } from "@/lib/picker-injector";
 import { ModelSelector } from "@/components/model-selector";
 import { ModelProvider, isProviderValid } from "@/lib/model-provider";
+
+// Throttle utility to limit function calls
+function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  let lastRan: number | null = null;
+
+  return function (this: any, ...args: Parameters<T>) {
+    const now = Date.now();
+
+    if (!lastRan) {
+      func.apply(this, args);
+      lastRan = now;
+    } else {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+
+      const remaining = wait - (now - lastRan);
+
+      if (remaining <= 0) {
+        func.apply(this, args);
+        lastRan = now;
+      } else {
+        timeout = setTimeout(() => {
+          func.apply(this, args);
+          lastRan = Date.now();
+        }, remaining);
+      }
+    }
+  };
+}
 
 function ChatContent() {
   const [input, setInput] = useState("");
@@ -26,6 +60,11 @@ function ChatContent() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialMessageSent = useRef(false);
+
+  // Memoize the component selection callback to prevent PreviewPane re-renders
+  const handleComponentSelected = useCallback((component: ComponentInfo) => {
+    setSelectedComponent(component);
+  }, []);
 
   // Model selection state with localStorage persistence
   const [selectedModel, setSelectedModel] = useState<ModelProvider>(() => {
@@ -46,13 +85,20 @@ function ChatContent() {
     }
   }, [selectedModel]);
 
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({
+  // Memoize transport to prevent recreation on every render
+  // This is the PRIMARY fix for "Maximum update depth exceeded"
+  const transport = useMemo(() => {
+    return new DefaultChatTransport({
       api: "/api/chat",
       body: {
         modelProvider: selectedModel,
       },
-    }),
+    });
+  }, [selectedModel]); // Only recreate when model actually changes
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport,
+    experimental_throttle: 50, // Batch updates to 50ms intervals (official Vercel recommendation)
   });
 
   // Extract sessionId and previewPort from tool invocations
@@ -89,28 +135,31 @@ function ChatContent() {
         ],
       });
     }
-  }, [initialQuery, messages.length, sendMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery, messages.length]);
 
   // Handle scroll event to detect if user is at bottom
+  // Throttle to reduce setState calls during scrolling
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
 
-    const handleScroll = () => {
+    const handleScroll = throttle(() => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
       // Consider user at bottom if within 100px
       setIsUserAtBottom(distanceFromBottom < 100);
-    };
+    }, 100); // Throttle to max 1 call per 100ms
 
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
   // Auto-scroll to bottom only if user is at bottom
+  // Use instant scroll to prevent scroll event loops
   useEffect(() => {
     if (isUserAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
     }
   }, [messages, isUserAtBottom]);
 
@@ -401,7 +450,7 @@ function ChatContent() {
             <PreviewPane
               sessionId={sessionId}
               previewPort={previewPort}
-              onComponentSelected={setSelectedComponent}
+              onComponentSelected={handleComponentSelected}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 bg-[#0a0a0a]">

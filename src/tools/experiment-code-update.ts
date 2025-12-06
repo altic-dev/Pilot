@@ -800,7 +800,7 @@ export const experimentCodeUpdateTool = tool({
         "Optional session ID to use an existing Docker container. If provided, the tool will use the existing container and NOT destroy it after completion.",
       ),
     modelProvider: z
-      .enum(["claude", "lmstudio"])
+      .enum(["claude", "lmstudio", "groq"])
       .optional()
       .describe("AI model provider to use. Defaults to 'claude'."),
   }),

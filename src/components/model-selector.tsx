@@ -63,8 +63,8 @@ export function ModelSelector({
             onClick={() => setIsOpen(false)}
           />
 
-          {/* Dropdown */}
-          <div className="absolute top-full left-0 mt-1 w-64 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] shadow-xl z-20 overflow-hidden">
+          {/* Dropdown - opens upward to stay in viewport */}
+          <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] shadow-xl z-20 overflow-hidden">
             {Object.entries(MODEL_CONFIGS).map(([key, config]) => (
               <button
                 key={key}

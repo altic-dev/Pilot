@@ -63,7 +63,7 @@ export const textVariationTool = tool({
       .optional()
       .describe("Optional: Desired tone (e.g., 'professional', 'casual', 'urgent', 'playful', 'empathetic', 'authoritative')"),
     modelProvider: z
-      .enum(["claude", "lmstudio"])
+      .enum(["claude", "lmstudio", "groq"])
       .optional()
       .describe("AI model provider to use. Defaults to 'claude'."),
   }),

@@ -145,7 +145,7 @@ export function PreviewPane({ sessionId, previewPort, onComponentSelected }: Pre
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onComponentSelected]);
+  }, []);
 
   // Timeout for picker ready check
   useEffect(() => {

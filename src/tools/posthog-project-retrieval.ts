@@ -8,7 +8,7 @@ export const posthogProjectRetrievalTool = tool({
   description: description,
   inputSchema: z.object(),
   execute: async (): Promise<{
-    projectId: number;
+    projectId: string;
     projectName: string;
     projectUrl: string;
   }> => {
@@ -38,7 +38,7 @@ export const posthogProjectRetrievalTool = tool({
       const latestProject = projects[0];
 
       return {
-        projectId: latestProject.id,
+        projectId: String(latestProject.id),
         projectName: latestProject.name,
         projectUrl: `${POSTHOG_URL}/project/${latestProject.id}`,
       };

@@ -13,7 +13,7 @@ export const posthogExperimentCreationTool = tool({
   description:
     "Create a posthog experiment. Note that experiments live under a project",
   inputSchema: z.object({
-    projectId: z.string().describe("Posthog project Id"),
+    projectId: z.coerce.string().describe("Posthog project Id (accepts string or number)"),
     name: z.string().describe("Name of the experiment"),
     description: z
       .string()

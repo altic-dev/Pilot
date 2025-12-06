@@ -1,4 +1,3 @@
-import { anthropic } from "@ai-sdk/anthropic";
 import {
   convertToModelMessages,
   streamText,
@@ -23,16 +22,17 @@ import {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { messages, modelProvider }: {
+  const {
+    messages,
+    modelProvider,
+  }: {
     messages: UIMessage[];
     modelProvider?: string;
   } = body;
 
   // Validate and sanitize model provider
   const provider: ModelProvider =
-    modelProvider && isProviderValid(modelProvider)
-      ? modelProvider
-      : "claude"; // default fallback
+    modelProvider && isProviderValid(modelProvider) ? modelProvider : "claude"; // default fallback
 
   logger.info("Chat API called", {
     messageCount: messages.length,
@@ -46,13 +46,14 @@ export async function POST(request: Request) {
 
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === "user") {
-    const textPart = lastMessage.parts
-      ?.find((part: any) => part.type === "text") as any;
+    const textPart = lastMessage.parts?.find(
+      (part: any) => part.type === "text",
+    ) as any;
     const textContent = textPart?.text;
 
     if (textContent) {
       const componentMatch = textContent.match(
-        /\[SELECTED COMPONENT\]\n([\s\S]*?)\n\n\[USER MESSAGE\]\n([\s\S]*)/
+        /\[SELECTED COMPONENT\]\n([\s\S]*?)\n\n\[USER MESSAGE\]\n([\s\S]*)/,
       );
 
       if (componentMatch) {
@@ -156,16 +157,17 @@ The selected component provides important context for understanding what the use
       toolCalls?.forEach((call, idx) => {
         logger.info(`Main agent tool call ${idx + 1}`, {
           toolName: call.toolName,
-          args: 'args' in call ? call.args : call,
+          args: "args" in call ? call.args : call,
         });
       });
 
-      // Log each tool result in detail  
+      // Log each tool result in detail
       toolResults?.forEach((result, idx) => {
-        const resultValue = 'result' in result ? result.result : result;
-        const resultPreview = typeof resultValue === 'string'
-          ? resultValue.substring(0, 500)
-          : JSON.stringify(resultValue).substring(0, 500);
+        const resultValue = "result" in result ? result.result : result;
+        const resultPreview =
+          typeof resultValue === "string"
+            ? resultValue.substring(0, 500)
+            : JSON.stringify(resultValue).substring(0, 500);
 
         logger.info(`Main agent tool result ${idx + 1}`, {
           toolName: result.toolName,

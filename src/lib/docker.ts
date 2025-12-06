@@ -91,6 +91,16 @@ export async function createContainer(
     });
 
     await container.start();
+
+    // Verify container is actually running
+    const inspection = await container.inspect();
+    if (inspection.State.Status !== 'running') {
+      throw new Error(
+        `Container failed to start properly. Status: ${inspection.State.Status}, ` +
+        `Error: ${inspection.State.Error || 'unknown'}. This may indicate Docker is out of disk space.`
+      );
+    }
+
     containerCache.set(sessionId, container);
 
     logger.info('Container created and started', { sessionId, containerId: container.id });
