@@ -372,6 +372,105 @@ async function createDockerTools(
     },
   });
 
+  const discoverRepoStructureTool = tool({
+    description:
+      "Efficiently discover repository structure with minimal output. Works in both git and non-git directories. Returns directory structure, important files, and file counts. Much more efficient than ls -R.",
+    inputSchema: z.object({
+      maxDepth: z
+        .number()
+        .optional()
+        .default(2)
+        .describe("Maximum directory depth to explore (default: 2)"),
+    }),
+    execute: async ({ maxDepth }) => {
+      logger.info("Discover repo structure tool executing", {
+        sessionId,
+        maxDepth,
+      });
+
+      try {
+        const results: string[] = [];
+
+        // 0. Auto-detect if we're in a git repository
+        let isGitRepo = false;
+        try {
+          const { exitCode } = await docker.execCommand(sessionId, [
+            "/bin/sh",
+            "-c",
+            "git rev-parse --git-dir 2>/dev/null",
+          ]);
+          isGitRepo = exitCode === 0;
+        } catch {
+          isGitRepo = false;
+        }
+
+        results.push(
+          isGitRepo ? "Git repository detected" : "Non-git directory",
+        );
+
+        // 1. Get total file count (with appropriate method)
+        const fileCountCmd = isGitRepo
+          ? "git ls-files | wc -l"
+          : "find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | wc -l";
+
+        const { stdout: fileCount } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          fileCountCmd,
+        ]);
+        results.push(`Total files: ${fileCount.trim()}`);
+
+        // 2. Get directory structure (limited depth)
+        const { stdout: directories } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          `find . -maxdepth ${maxDepth} -type d -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | head -50`,
+        ]);
+        results.push("\nDirectory Structure:");
+        results.push(directories.trim());
+
+        // 3. Get important config files at root
+        const { stdout: configFiles } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          "ls -la | grep -E 'package\\.json|README|tsconfig|next\\.config|vite\\.config|.*\\.lock\\..*|Dockerfile|docker-compose' || true",
+        ]);
+        if (configFiles.trim()) {
+          results.push("\nImportant Files:");
+          results.push(configFiles.trim());
+        }
+
+        // 4. Sample of files (git-tracked if available, otherwise find)
+        const listCmd = isGitRepo
+          ? "git ls-files | head -30"
+          : "find . -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' | head -30";
+
+        const { stdout: fileList } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          listCmd,
+        ]);
+        results.push("\nSample Files:");
+        results.push(fileList.trim());
+
+        const output = results.join("\n");
+        logger.info("Discover repo structure tool completed", {
+          sessionId,
+          isGitRepo,
+          outputLength: output.length,
+        });
+
+        return output;
+      } catch (error) {
+        logger.error("Discover repo structure tool failed", {
+          sessionId,
+          error,
+        });
+        throw error;
+      }
+    },
+  });
+
   // Git-specific tools for better control
   const gitCloneTool = tool({
     description: "Clone a GitHub repository into the container workspace",
@@ -494,6 +593,7 @@ async function createDockerTools(
     textEditorTool,
     fileUpdateTool,
     grepTool,
+    discoverRepoStructureTool,
     gitCloneTool,
     gitAddTool,
     gitCommitTool,
@@ -611,10 +711,19 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 **NOTE**: All file operations happen inside an isolated Docker container at /workspace. The container is automatically created and destroyed for each session.
 
 1. **Clone Repository**: Use **gitCloneTool** to clone the GitHub repository into /workspace
-   - The repository will be cloned directly into the workspace directory
-   - All subsequent commands should use the cloned repository path
+   - The repository will be cloned to a subdirectory (e.g., if URL is github.com/user/repo-name, it clones to ./repo-name)
+   - **CRITICAL**: After cloning, you MUST change into the cloned directory using bash cd command
+   - Example: After cloning github.com/user/my-app, run: `cd my-app` or `cd /workspace/my-app`
+   - All subsequent commands (discoverRepoStructureTool, npm install, file edits, git commands) MUST be run from inside this directory
+   - Extract the repository name from the URL to determine the directory name
 
-2. **Analyze Codebase**: Analyze the codebase (README, package.json, etc.) to detect language, framework, and dependencies
+2. **Analyze Codebase**: Use **discoverRepoStructureTool** to get an efficient overview
+   - This tool auto-detects git vs non-git directories and adjusts accordingly
+   - Provides: total file count, directory structure, important config files, and sample files
+   - Output is limited to ~100-200 lines (vs 10,000+ with ls -R)
+   - Works before git clone (non-git) and after clone (git repo)
+   - Then read README, package.json to identify language, framework, and dependencies
+   - **CRITICAL: DO NOT use `ls -R` - it produces excessive output and wastes context**
 
 3. **Install Dependencies**: Check if dependencies are installed; if not, install using the correct package manager:
    - Check for pnpm-lock.yaml → use pnpm
@@ -633,12 +742,13 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 7. **MANDATORY - Commit Changes**: Use **gitAddTool** and **gitCommitTool** to commit changes
    - Use gitAddTool to stage files (e.g., files: ".")
    - Use gitCommitTool with a descriptive message (e.g., "Add PostHog feature flag for [hypothesis]")
-   - Provide the repository's working directory path to both tools
+   - Provide the repository's working directory path to both tools (e.g., "/workspace/repo-name" where repo-name is from the cloned URL)
    - Do NOT use --author flag or modify git config - use the repository's existing configuration
 
 8. **MANDATORY - Create Pull Request**: Use **githubCreatePRTool** to create a PR
    - Provide a descriptive title summarizing the feature flag implementation
    - Include body with: what was changed, hypothesis being tested, test variant details
+   - Provide the repository's working directory path (same as step 7)
    - The tool will automatically push any unpushed commits to the remote
    - Verify the PR was created successfully and capture the PR URL
 
@@ -712,7 +822,32 @@ When a test variant text is provided:
 - For the 'control' variant: keep the original text
 - Preserve all surrounding code structure and styling
 
+## Tool Usage Rules - READ THIS FIRST
+
+**CRITICAL - ONLY USE THE TOOLS LISTED BELOW**:
+You have access to EXACTLY 9 tools:
+1. bash
+2. textEditorTool
+3. fileUpdateTool
+4. grepTool
+5. discoverRepoStructureTool
+6. gitCloneTool
+7. gitAddTool
+8. gitCommitTool
+9. githubCreatePRTool
+
+**DO NOT attempt to use ANY other tools**. Tools like `repo_browser`, `file_editor`, `read_file`, `write_file`, `open_file`, or any other tool names are NOT available and will cause errors. If you need to perform a file operation, use one of the tools listed above.
+
 ## Available Tools
+
+### Repository Discovery Tool (USE THIS FIRST)
+- **discoverRepoStructureTool**: Get efficient repository overview without overwhelming output
+  - Auto-detects git vs non-git directories and uses appropriate commands
+  - Works in any directory (before/after clone, git/non-git)
+  - Returns: directory structure, file counts, important config files, sample files
+  - Use this instead of ls -R, find, or manual exploration
+  - Parameter: maxDepth (default: 2) - controls directory depth
+  - Automatically excludes node_modules, .git, dist directories
 
 ### Code Search Tool (PREFERRED for finding files)
 - **grepTool**: AI-powered intelligent code search using natural language queries
@@ -739,6 +874,10 @@ When a test variant text is provided:
 
 ## Critical Requirements
 
+- **ONLY use the 9 tools listed in "Tool Usage Rules"** - attempting to use tools like repo_browser, file_editor, or any other tools will cause errors
+- **NEVER use `ls -R`** - it produces 10,000+ lines of output and wastes context
+- **MUST cd into cloned repository directory** after using gitCloneTool before running any other commands
+- Use **discoverRepoStructureTool** for initial repository exploration
 - Read README/package.json first to identify language and framework
 - Detect package manager by checking for lock files (pnpm-lock.yaml → pnpm, package-lock.json → npm)
 - Install dependencies if node_modules is missing (using detected package manager)
@@ -898,6 +1037,7 @@ When implementing the feature flag conditional, use the provided test variant te
           fileUpdateTool: tools.fileUpdateTool,
           textEditorTool: tools.textEditorTool,
           grepTool: tools.grepTool,
+          discoverRepoStructureTool: tools.discoverRepoStructureTool,
           gitCloneTool: tools.gitCloneTool,
           gitAddTool: tools.gitAddTool,
           gitCommitTool: tools.gitCommitTool,
