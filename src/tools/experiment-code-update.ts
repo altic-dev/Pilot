@@ -7,6 +7,11 @@ import { progressStore } from "@/lib/progress-store";
 import fileUpdateToolDescription from "./file-update-tool.md";
 import { MorphClient } from "@morphllm/morphsdk";
 import { DockerRipgrepProvider } from "@/lib/docker-ripgrep-provider";
+import { getModel, ModelProvider } from "@/lib/model-provider";
+import {
+  createGenericBashTool,
+  createGenericTextEditorTool,
+} from "@/lib/generic-tools";
 
 const morphClient = new MorphClient({ apiKey: process.env.MORPH_LLM_API_KEY });
 
@@ -40,212 +45,237 @@ function createToolWithParsedArgs(tool: any) {
 /**
  * Create tools that operate within a Docker container
  */
-async function createDockerTools(sessionId: string) {
+async function createDockerTools(
+  sessionId: string,
+  modelProvider: ModelProvider,
+) {
   const docker = await getDockerModule();
-  const bashTool = anthropic.tools.bash_20250124({
-    execute: async ({ command, restart }) => {
-      logger.info("Docker bash tool executing command", { sessionId, command });
 
-      const allowedCommands = [
-        "ls",
-        "cat",
-        "find",
-        "git",
-        "mkdir",
-        "cd",
-        "npm",
-        "pnpm",
-        "gh",
-      ];
-      const forbiddenGitConfigPatterns = [
-        "git config user.email",
-        "git config --global user.email",
-        "git config user.name",
-        "git config --global user.name",
-      ];
-      const baseCommand = command.trim().split(/\s+/)[0];
+  // Create command executor for bash tool
+  const executeCommand = async (command: string) => {
+    logger.info("Docker bash tool executing command", { sessionId, command });
 
-      if (!allowedCommands.includes(baseCommand)) {
-        const errorMsg = `Command '${baseCommand}' is not allowed. Only ${allowedCommands.join(", ")} are permitted.`;
-        logger.error("Docker bash tool command not allowed", {
-          sessionId,
-          command,
-          baseCommand,
-          allowedCommands,
-        });
-        throw new Error(errorMsg);
-      }
+    const allowedCommands = [
+      "ls",
+      "cat",
+      "find",
+      "git",
+      "mkdir",
+      "cd",
+      "npm",
+      "pnpm",
+      "gh",
+    ];
+    const forbiddenGitConfigPatterns = [
+      "git config user.email",
+      "git config --global user.email",
+      "git config user.name",
+      "git config --global user.name",
+    ];
+    const baseCommand = command.trim().split(/\s+/)[0];
 
-      if (
-        forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))
-      ) {
-        const errorMsg =
-          "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
-        logger.error("Docker bash tool command forbidden", {
-          sessionId,
-          command,
-          forbiddenPatterns: forbiddenGitConfigPatterns,
-        });
-        throw new Error(errorMsg);
-      }
-
-      try {
-        const { stdout, stderr, exitCode } = await docker.execCommand(
-          sessionId,
-          ["/bin/sh", "-c", command],
-        );
-
-        const output = stdout || stderr;
-        logger.info("Docker bash tool command completed", {
-          sessionId,
-          command,
-          exitCode,
-          outputLength: output.length,
-          outputPreview: output.substring(0, 500),
-        });
-
-        if (exitCode !== 0 && stderr) {
-          throw new Error(stderr);
-        }
-
-        return output;
-      } catch (error) {
-        logger.error("Docker bash tool command failed", {
-          sessionId,
-          command,
-          error:
-            error instanceof Error
-              ? {
-                  message: error.message,
-                  stack: error.stack,
-                }
-              : String(error),
-        });
-        throw error;
-      }
-    },
-  });
-
-  const textEditorTool = createToolWithParsedArgs(
-    anthropic.tools.textEditor_20250728({
-      execute: async ({
+    if (!allowedCommands.includes(baseCommand)) {
+      const errorMsg = `Command '${baseCommand}' is not allowed. Only ${allowedCommands.join(", ")} are permitted.`;
+      logger.error("Docker bash tool command not allowed", {
+        sessionId,
         command,
-        path,
-        file_text,
-        old_str,
-        new_str,
-        insert_line,
-        view_range,
-      }) => {
-        logger.info("Docker text editor tool executing", {
-          sessionId,
-          command,
-          path,
-          view_range,
-        });
+        baseCommand,
+        allowedCommands,
+      });
+      throw new Error(errorMsg);
+    }
 
-        try {
-          if (command === "view") {
-            const content = await docker.readFile(sessionId, path);
-            const lines = content.split("\n");
+    if (
+      forbiddenGitConfigPatterns.some((pattern) => command.includes(pattern))
+    ) {
+      const errorMsg =
+        "Commands that modify git user.name or user.email are forbidden. Use the existing repository configuration.";
+      logger.error("Docker bash tool command forbidden", {
+        sessionId,
+        command,
+        forbiddenPatterns: forbiddenGitConfigPatterns,
+      });
+      throw new Error(errorMsg);
+    }
 
-            if (view_range) {
-              const [start, end] = view_range;
-              const selectedLines = lines.slice(start - 1, end);
-              const result = selectedLines.join("\n");
-              logger.info("Docker text editor tool view completed", {
-                sessionId,
-                path,
-                viewRange: view_range,
-                linesReturned: selectedLines.length,
-                contentPreview: result.substring(0, 200),
-              });
-              return result;
-            }
+    try {
+      const { stdout, stderr, exitCode } = await docker.execCommand(sessionId, [
+        "/bin/sh",
+        "-c",
+        command,
+      ]);
 
-            logger.info("Docker text editor tool view completed", {
-              sessionId,
+      const output = stdout || stderr;
+      logger.info("Docker bash tool command completed", {
+        sessionId,
+        command,
+        exitCode,
+        outputLength: output.length,
+        outputPreview: output.substring(0, 500),
+      });
+
+      if (exitCode !== 0 && stderr) {
+        throw new Error(stderr);
+      }
+
+      return output;
+    } catch (error) {
+      logger.error("Docker bash tool command failed", {
+        sessionId,
+        command,
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+              }
+            : String(error),
+      });
+      throw error;
+    }
+  };
+
+  // Choose bash tool based on provider
+  const bashTool =
+    modelProvider === "sonnet" || modelProvider === "haiku"
+      ? anthropic.tools.bash_20250124({
+          execute: async ({ command }) => executeCommand(command),
+        })
+      : createGenericBashTool(executeCommand);
+
+  // Create file operation callbacks for text editor tool
+  const readFileCallback = async (path: string) => {
+    return await docker.readFile(sessionId, path);
+  };
+
+  const writeFileCallback = async (path: string, content: string) => {
+    await docker.writeFile(sessionId, path, content);
+  };
+
+  // Choose text editor tool based on provider
+  const textEditorTool =
+    modelProvider === "sonnet" || modelProvider === "haiku"
+      ? createToolWithParsedArgs(
+          anthropic.tools.textEditor_20250728({
+            execute: async ({
+              command,
               path,
-              totalLines: lines.length,
-              contentLength: content.length,
-            });
-            return content;
-          }
-
-          if (command === "create") {
-            await docker.writeFile(sessionId, path, file_text || "");
-            const result = `Created ${path}`;
-            logger.info("Docker text editor tool create completed", {
-              sessionId,
-              path,
-              fileTextLength: (file_text || "").length,
-            });
-            return result;
-          }
-
-          if (command === "str_replace") {
-            let content = await docker.readFile(sessionId, path);
-
-            if (!old_str) {
-              const error = new Error(
-                "old_str is required for str_replace command",
-              );
-              logger.error("Docker text editor tool str_replace failed", {
+              file_text,
+              old_str,
+              new_str,
+              insert_line,
+              view_range,
+            }) => {
+              logger.info("Docker text editor tool executing", {
                 sessionId,
+                command,
                 path,
-                reason: "old_str is required",
+                view_range,
               });
-              throw error;
-            }
 
-            if (!content.includes(old_str)) {
-              const error = new Error(`old_str not found in ${path}`);
-              logger.error("Docker text editor tool str_replace failed", {
-                sessionId,
-                path,
-                reason: "old_str not found",
-                oldStrPreview: old_str.substring(0, 100),
-              });
-              throw error;
-            }
+              try {
+                if (command === "view") {
+                  const content = await docker.readFile(sessionId, path);
+                  const lines = content.split("\n");
 
-            content = content.replace(old_str, new_str || "");
-            await docker.writeFile(sessionId, path, content);
-            const result = `Replaced content in ${path}`;
-            logger.info("Docker text editor tool str_replace completed", {
-              sessionId,
-              path,
-              oldStrLength: old_str.length,
-              newStrLength: (new_str || "").length,
-            });
-            return result;
-          }
-
-          const error = new Error(`Unknown command: ${command}`);
-          logger.error("Docker text editor tool unknown command", {
-            sessionId,
-            command,
-            path,
-          });
-          throw error;
-        } catch (error) {
-          logger.error("Docker text editor tool execution failed", {
-            sessionId,
-            command,
-            path,
-            error:
-              error instanceof Error
-                ? {
-                    message: error.message,
-                    stack: error.stack,
+                  if (view_range) {
+                    const [start, end] = view_range;
+                    const selectedLines = lines.slice(start - 1, end);
+                    const result = selectedLines.join("\n");
+                    logger.info("Docker text editor tool view completed", {
+                      sessionId,
+                      path,
+                      viewRange: view_range,
+                      linesReturned: selectedLines.length,
+                      contentPreview: result.substring(0, 200),
+                    });
+                    return result;
                   }
-                : String(error),
-          });
-          throw error;
-        }
-      },
-    }),
-  );
+
+                  logger.info("Docker text editor tool view completed", {
+                    sessionId,
+                    path,
+                    totalLines: lines.length,
+                    contentLength: content.length,
+                  });
+                  return content;
+                }
+
+                if (command === "create") {
+                  await docker.writeFile(sessionId, path, file_text || "");
+                  const result = `Created ${path}`;
+                  logger.info("Docker text editor tool create completed", {
+                    sessionId,
+                    path,
+                    fileTextLength: (file_text || "").length,
+                  });
+                  return result;
+                }
+
+                if (command === "str_replace") {
+                  let content = await docker.readFile(sessionId, path);
+
+                  if (!old_str) {
+                    const error = new Error(
+                      "old_str is required for str_replace command",
+                    );
+                    logger.error("Docker text editor tool str_replace failed", {
+                      sessionId,
+                      path,
+                      reason: "old_str is required",
+                    });
+                    throw error;
+                  }
+
+                  if (!content.includes(old_str)) {
+                    const error = new Error(`old_str not found in ${path}`);
+                    logger.error("Docker text editor tool str_replace failed", {
+                      sessionId,
+                      path,
+                      reason: "old_str not found",
+                      oldStrPreview: old_str.substring(0, 100),
+                    });
+                    throw error;
+                  }
+
+                  content = content.replace(old_str, new_str || "");
+                  await docker.writeFile(sessionId, path, content);
+                  const result = `Replaced content in ${path}`;
+                  logger.info("Docker text editor tool str_replace completed", {
+                    sessionId,
+                    path,
+                    oldStrLength: old_str.length,
+                    newStrLength: (new_str || "").length,
+                  });
+                  return result;
+                }
+
+                const error = new Error(`Unknown command: ${command}`);
+                logger.error("Docker text editor tool unknown command", {
+                  sessionId,
+                  command,
+                  path,
+                });
+                throw error;
+              } catch (error) {
+                logger.error("Docker text editor tool execution failed", {
+                  sessionId,
+                  command,
+                  path,
+                  error:
+                    error instanceof Error
+                      ? {
+                          message: error.message,
+                          stack: error.stack,
+                        }
+                      : String(error),
+                });
+                throw error;
+              }
+            },
+          }),
+        )
+      : createGenericTextEditorTool(readFileCallback, writeFileCallback);
 
   const fileUpdateTool = tool({
     description: fileUpdateToolDescription,
@@ -342,6 +372,105 @@ async function createDockerTools(sessionId: string) {
     },
   });
 
+  const discoverRepoStructureTool = tool({
+    description:
+      "Efficiently discover repository structure with minimal output. Works in both git and non-git directories. Returns directory structure, important files, and file counts. Much more efficient than ls -R.",
+    inputSchema: z.object({
+      maxDepth: z
+        .number()
+        .optional()
+        .default(2)
+        .describe("Maximum directory depth to explore (default: 2)"),
+    }),
+    execute: async ({ maxDepth }) => {
+      logger.info("Discover repo structure tool executing", {
+        sessionId,
+        maxDepth,
+      });
+
+      try {
+        const results: string[] = [];
+
+        // 0. Auto-detect if we're in a git repository
+        let isGitRepo = false;
+        try {
+          const { exitCode } = await docker.execCommand(sessionId, [
+            "/bin/sh",
+            "-c",
+            "git rev-parse --git-dir 2>/dev/null",
+          ]);
+          isGitRepo = exitCode === 0;
+        } catch {
+          isGitRepo = false;
+        }
+
+        results.push(
+          isGitRepo ? "Git repository detected" : "Non-git directory",
+        );
+
+        // 1. Get total file count (with appropriate method)
+        const fileCountCmd = isGitRepo
+          ? "git ls-files | wc -l"
+          : "find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | wc -l";
+
+        const { stdout: fileCount } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          fileCountCmd,
+        ]);
+        results.push(`Total files: ${fileCount.trim()}`);
+
+        // 2. Get directory structure (limited depth)
+        const { stdout: directories } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          `find . -maxdepth ${maxDepth} -type d -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | head -50`,
+        ]);
+        results.push("\nDirectory Structure:");
+        results.push(directories.trim());
+
+        // 3. Get important config files at root
+        const { stdout: configFiles } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          "ls -la | grep -E 'package\\.json|README|tsconfig|next\\.config|vite\\.config|.*\\.lock\\..*|Dockerfile|docker-compose' || true",
+        ]);
+        if (configFiles.trim()) {
+          results.push("\nImportant Files:");
+          results.push(configFiles.trim());
+        }
+
+        // 4. Sample of files (git-tracked if available, otherwise find)
+        const listCmd = isGitRepo
+          ? "git ls-files | head -30"
+          : "find . -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' | head -30";
+
+        const { stdout: fileList } = await docker.execCommand(sessionId, [
+          "/bin/sh",
+          "-c",
+          listCmd,
+        ]);
+        results.push("\nSample Files:");
+        results.push(fileList.trim());
+
+        const output = results.join("\n");
+        logger.info("Discover repo structure tool completed", {
+          sessionId,
+          isGitRepo,
+          outputLength: output.length,
+        });
+
+        return output;
+      } catch (error) {
+        logger.error("Discover repo structure tool failed", {
+          sessionId,
+          error,
+        });
+        throw error;
+      }
+    },
+  });
+
   // Git-specific tools for better control
   const gitCloneTool = tool({
     description: "Clone a GitHub repository into the container workspace",
@@ -355,6 +484,7 @@ async function createDockerTools(sessionId: string) {
     execute: async ({ url, directory }) => {
       logger.info("Git clone tool executing", { sessionId, url, directory });
 
+      url = url.endsWith(".git") ? url.replace(".git", "") : url;
       const cloneCommand = directory
         ? `gh repo clone ${url} ${directory}`
         : `gh repo clone ${url}`;
@@ -463,6 +593,7 @@ async function createDockerTools(sessionId: string) {
     textEditorTool,
     fileUpdateTool,
     grepTool,
+    discoverRepoStructureTool,
     gitCloneTool,
     gitAddTool,
     gitCommitTool,
@@ -580,10 +711,19 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 **NOTE**: All file operations happen inside an isolated Docker container at /workspace. The container is automatically created and destroyed for each session.
 
 1. **Clone Repository**: Use **gitCloneTool** to clone the GitHub repository into /workspace
-   - The repository will be cloned directly into the workspace directory
-   - All subsequent commands should use the cloned repository path
+   - The repository will be cloned to a subdirectory (e.g., if URL is github.com/user/repo-name, it clones to ./repo-name)
+   - **CRITICAL**: After cloning, you MUST change into the cloned directory using bash cd command
+   - Example: After cloning github.com/user/my-app, run: "cd my-app" or "cd /workspace/my-app"
+   - All subsequent commands (discoverRepoStructureTool, npm install, file edits, git commands) MUST be run from inside this directory
+   - Extract the repository name from the URL to determine the directory name
 
-2. **Analyze Codebase**: Analyze the codebase (README, package.json, etc.) to detect language, framework, and dependencies
+2. **Analyze Codebase**: Use **discoverRepoStructureTool** to get an efficient overview
+   - This tool auto-detects git vs non-git directories and adjusts accordingly
+   - Provides: total file count, directory structure, important config files, and sample files
+   - Output is limited to ~100-200 lines (vs 10,000+ with ls -R)
+   - Works before git clone (non-git) and after clone (git repo)
+   - Then read README, package.json to identify language, framework, and dependencies
+   - **CRITICAL: DO NOT use "ls -R" - it produces excessive output and wastes context**
 
 3. **Install Dependencies**: Check if dependencies are installed; if not, install using the correct package manager:
    - Check for pnpm-lock.yaml → use pnpm
@@ -602,12 +742,13 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 7. **MANDATORY - Commit Changes**: Use **gitAddTool** and **gitCommitTool** to commit changes
    - Use gitAddTool to stage files (e.g., files: ".")
    - Use gitCommitTool with a descriptive message (e.g., "Add PostHog feature flag for [hypothesis]")
-   - Provide the repository's working directory path to both tools
+   - Provide the repository's working directory path to both tools (e.g., "/workspace/repo-name" where repo-name is from the cloned URL)
    - Do NOT use --author flag or modify git config - use the repository's existing configuration
 
 8. **MANDATORY - Create Pull Request**: Use **githubCreatePRTool** to create a PR
    - Provide a descriptive title summarizing the feature flag implementation
    - Include body with: what was changed, hypothesis being tested, test variant details
+   - Provide the repository's working directory path (same as step 7)
    - The tool will automatically push any unpushed commits to the remote
    - Verify the PR was created successfully and capture the PR URL
 
@@ -681,7 +822,32 @@ When a test variant text is provided:
 - For the 'control' variant: keep the original text
 - Preserve all surrounding code structure and styling
 
+## Tool Usage Rules - READ THIS FIRST
+
+**CRITICAL - ONLY USE THE TOOLS LISTED BELOW**:
+You have access to EXACTLY 9 tools:
+1. bash
+2. textEditorTool
+3. fileUpdateTool
+4. grepTool
+5. discoverRepoStructureTool
+6. gitCloneTool
+7. gitAddTool
+8. gitCommitTool
+9. githubCreatePRTool
+
+**DO NOT attempt to use ANY other tools**. Tools like "repo_browser", "file_editor", "read_file", "write_file", "open_file", or any other tool names are NOT available and will cause errors. If you need to perform a file operation, use one of the tools listed above.
+
 ## Available Tools
+
+### Repository Discovery Tool (USE THIS FIRST)
+- **discoverRepoStructureTool**: Get efficient repository overview without overwhelming output
+  - Auto-detects git vs non-git directories and uses appropriate commands
+  - Works in any directory (before/after clone, git/non-git)
+  - Returns: directory structure, file counts, important config files, sample files
+  - Use this instead of ls -R, find, or manual exploration
+  - Parameter: maxDepth (default: 2) - controls directory depth
+  - Automatically excludes node_modules, .git, dist directories
 
 ### Code Search Tool (PREFERRED for finding files)
 - **grepTool**: AI-powered intelligent code search using natural language queries
@@ -708,6 +874,10 @@ When a test variant text is provided:
 
 ## Critical Requirements
 
+- **ONLY use the 9 tools listed in "Tool Usage Rules"** - attempting to use tools like repo_browser, file_editor, or any other tools will cause errors
+- **NEVER use "ls -R"** - it produces 10,000+ lines of output and wastes context
+- **MUST cd into cloned repository directory** after using gitCloneTool before running any other commands
+- Use **discoverRepoStructureTool** for initial repository exploration
 - Read README/package.json first to identify language and framework
 - Detect package manager by checking for lock files (pnpm-lock.yaml → pnpm, package-lock.json → npm)
 - Install dependencies if node_modules is missing (using detected package manager)
@@ -768,6 +938,10 @@ export const experimentCodeUpdateTool = tool({
       .describe(
         "Optional session ID to use an existing Docker container. If provided, the tool will use the existing container and NOT destroy it after completion.",
       ),
+    modelProvider: z
+      .enum(["sonnet", "lmstudio", "groq", "haiku"])
+      .optional()
+      .describe("AI model provider to use. Defaults to 'sonnet'."),
   }),
   execute: async ({
     githubUrl,
@@ -775,6 +949,7 @@ export const experimentCodeUpdateTool = tool({
     hypothesis,
     copyVariant,
     sessionId: providedSessionId,
+    modelProvider = "sonnet",
   }): Promise<string> => {
     // Use provided sessionId or generate a new one
     const executionId = providedSessionId || crypto.randomUUID();
@@ -796,6 +971,7 @@ export const experimentCodeUpdateTool = tool({
       hypothesis: hypothesis.substring(0, 100),
       copyVariant: copyVariant.substring(0, 100),
       isExistingContainer,
+      modelProvider,
     });
 
     // Create progress execution with input hash mapping
@@ -827,17 +1003,23 @@ export const experimentCodeUpdateTool = tool({
     }
 
     try {
-      logger.info("Starting sub-agent with streamText", { executionId });
+      logger.info("Starting sub-agent with streamText", {
+        executionId,
+        modelProvider,
+      });
 
-      // Create Docker-based tools for this session
-      const tools = await createDockerTools(executionId);
+      // Create Docker-based tools for this session WITH model provider
+      const tools = await createDockerTools(executionId, modelProvider);
+
+      // Get the model instance based on provider
+      const model = getModel(modelProvider);
 
       // Track reported stages with timestamps to avoid spam but allow legitimate repeats
       const reportedStages = new Map<string, number>();
       const STAGE_COOLDOWN_MS = 2000; // Don't report same stage within 2 seconds
 
       const result = streamText({
-        model: anthropic("claude-sonnet-4-5"),
+        model, // Use selected model instead of hardcoded
         prompt: `${EXPERIMENT_CODE_UPDATE_AGENT_PROMPT}
 
 ## Your Task
@@ -855,6 +1037,7 @@ When implementing the feature flag conditional, use the provided test variant te
           fileUpdateTool: tools.fileUpdateTool,
           textEditorTool: tools.textEditorTool,
           grepTool: tools.grepTool,
+          discoverRepoStructureTool: tools.discoverRepoStructureTool,
           gitCloneTool: tools.gitCloneTool,
           gitAddTool: tools.gitAddTool,
           gitCommitTool: tools.gitCommitTool,
@@ -870,6 +1053,7 @@ When implementing the feature flag conditional, use the provided test variant te
         }) => {
           logger.info("Sub-agent step completed", {
             executionId,
+            modelProvider,
             textPreview: text ? text.substring(0, 200) : "(no text)",
             toolCallsCount: toolCalls?.length || 0,
             finishReason,

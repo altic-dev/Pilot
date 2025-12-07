@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useSearchParams } from "next/navigation";
@@ -10,12 +10,49 @@ import { ToolInvocation } from "@/components/tool-invocation";
 import { PreviewPane } from "@/components/preview-pane";
 import { ComponentContextPill } from "@/components/component-context-pill";
 import { ComponentInfo } from "@/lib/picker-injector";
+import { ModelSelector } from "@/components/model-selector";
+import { ModelProvider, isProviderValid } from "@/lib/model-provider";
+
+// Throttle utility to limit function calls
+function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  let lastRan: number | null = null;
+
+  return function (this: any, ...args: Parameters<T>) {
+    const now = Date.now();
+
+    if (!lastRan) {
+      func.apply(this, args);
+      lastRan = now;
+    } else {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+
+      const remaining = wait - (now - lastRan);
+
+      if (remaining <= 0) {
+        func.apply(this, args);
+        lastRan = now;
+      } else {
+        timeout = setTimeout(() => {
+          func.apply(this, args);
+          lastRan = Date.now();
+        }, remaining);
+      }
+    }
+  };
+}
 
 function ChatContent() {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [previewPort, setPreviewPort] = useState<number | null>(null);
-  const [selectedComponent, setSelectedComponent] = useState<ComponentInfo | null>(null);
+  const [selectedComponent, setSelectedComponent] =
+    useState<ComponentInfo | null>(null);
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
@@ -24,10 +61,44 @@ function ChatContent() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialMessageSent = useRef(false);
 
-  const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({
+  // Memoize the component selection callback to prevent PreviewPane re-renders
+  const handleComponentSelected = useCallback((component: ComponentInfo) => {
+    setSelectedComponent(component);
+  }, []);
+
+  // Model selection state with localStorage persistence
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>(() => {
+    // Try to load from localStorage on mount (client-side only)
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("pilot-selected-model");
+      if (saved && isProviderValid(saved)) {
+        return saved as ModelProvider;
+      }
+    }
+    return "sonnet"; // default
+  });
+
+  // Persist model selection to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pilot-selected-model", selectedModel);
+    }
+  }, [selectedModel]);
+
+  // Memoize transport to prevent recreation on every render
+  // This is the PRIMARY fix for "Maximum update depth exceeded"
+  const transport = useMemo(() => {
+    return new DefaultChatTransport({
       api: "/api/chat",
-    }),
+      body: {
+        modelProvider: selectedModel,
+      },
+    });
+  }, [selectedModel]); // Only recreate when model actually changes
+
+  const { messages, sendMessage, status, error } = useChat({
+    transport,
+    experimental_throttle: 50, // Batch updates to 50ms intervals (official Vercel recommendation)
   });
 
   // Extract sessionId and previewPort from tool invocations
@@ -64,28 +135,31 @@ function ChatContent() {
         ],
       });
     }
-  }, [initialQuery, messages.length, sendMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery, messages.length]);
 
   // Handle scroll event to detect if user is at bottom
+  // Throttle to reduce setState calls during scrolling
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
 
-    const handleScroll = () => {
+    const handleScroll = throttle(() => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
       // Consider user at bottom if within 100px
       setIsUserAtBottom(distanceFromBottom < 100);
-    };
+    }, 100); // Throttle to max 1 call per 100ms
 
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
   // Auto-scroll to bottom only if user is at bottom
+  // Use instant scroll to prevent scroll event loops
   useEffect(() => {
     if (isUserAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
     }
   }, [messages, isUserAtBottom]);
 
@@ -289,6 +363,27 @@ function ChatContent() {
         {/* Input container */}
         <div className="border-t border-[#2a2a2a] bg-black px-4 py-4">
           <form onSubmit={handleSubmit} className="max-w-full mx-auto">
+            {/* Error display */}
+            {error && (
+              <div className="px-4 py-3 mb-3 bg-red-900/20 border border-red-900/50 rounded-lg text-red-400 text-sm">
+                <strong>Error:</strong> {error.message}
+                {selectedModel === "lmstudio" &&
+                  (error.message.includes("ECONNREFUSED") ||
+                    error.message.includes("fetch failed") ||
+                    error.message.includes("Failed to fetch")) && (
+                    <div className="mt-2 text-sm">
+                      <strong>LM Studio Connection Failed.</strong> Please
+                      ensure:
+                      <ul className="list-disc ml-4 mt-1">
+                        <li>LM Studio is running</li>
+                        <li>A model is loaded</li>
+                        <li>Server is running on http://127.0.0.1:1234</li>
+                      </ul>
+                    </div>
+                  )}
+              </div>
+            )}
+
             {/* Selected component pill */}
             {selectedComponent && (
               <div className="mb-3">
@@ -314,8 +409,14 @@ function ChatContent() {
                 }}
               />
 
-              {/* Bottom bar with send button */}
-              <div className="flex items-center justify-end mt-3">
+              {/* Bottom bar with model selector and send button */}
+              <div className="flex items-center justify-between mt-3">
+                <ModelSelector
+                  value={selectedModel}
+                  onChange={setSelectedModel}
+                  disabled={status !== "ready"}
+                />
+
                 <button
                   type="submit"
                   disabled={!input.trim() || status !== "ready"}
@@ -349,7 +450,7 @@ function ChatContent() {
             <PreviewPane
               sessionId={sessionId}
               previewPort={previewPort}
-              onComponentSelected={setSelectedComponent}
+              onComponentSelected={handleComponentSelected}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 bg-[#0a0a0a]">

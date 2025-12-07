@@ -1,12 +1,33 @@
 "use client";
 
-import { useState, FormEvent, KeyboardEvent } from "react";
+import { useState, useEffect, FormEvent, KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { StarsBackground } from "@/components/animate-ui/backgrounds/stars";
+import { ModelSelector } from "@/components/model-selector";
+import { ModelProvider, isProviderValid } from "@/lib/model-provider";
 
 export default function Home() {
   const [input, setInput] = useState("");
   const router = useRouter();
+
+  // Model selection state with localStorage persistence
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>(() => {
+    // Try to load from localStorage on mount (client-side only)
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("pilot-selected-model");
+      if (saved && isProviderValid(saved)) {
+        return saved as ModelProvider;
+      }
+    }
+    return "sonnet"; // default
+  });
+
+  // Persist model selection to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pilot-selected-model", selectedModel);
+    }
+  }, [selectedModel]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -35,6 +56,7 @@ export default function Home() {
         <div className="relative">
           <form onSubmit={handleSubmit}>
             <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
+              {/* Model selector header */}
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -46,7 +68,13 @@ export default function Home() {
               />
 
               {/* Bottom bar with mode selector and search button */}
-              <div className="flex items-center justify-end mt-3">
+              <div className="flex items-center justify-between mt-3">
+                <ModelSelector
+                  value={selectedModel}
+                  onChange={setSelectedModel}
+                  dropdownDirection="down"
+                />
+
                 <button
                   type="submit"
                   disabled={!input.trim()}

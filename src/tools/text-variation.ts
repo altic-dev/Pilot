@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { generateText, tool, stepCountIs } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { logger } from "@/lib/logger";
+import { getModel } from "@/lib/model-provider";
 
 const VariationResponseSchema = z.object({
   variation: z.string().min(1, "variation text is required"),
@@ -43,31 +43,51 @@ Return your response as a JSON object using this exact structure (no additional 
 `;
 
 export const textVariationTool = tool({
-  description: "Generate creative text variations for A/B testing experiments (headlines, CTAs, button text, marketing copy). Can create new copy from scratch or generate variations of existing text. Returns one compelling variation with an explanation of the approach.",
+  description:
+    "Generate creative text variations for A/B testing experiments (headlines, CTAs, button text, marketing copy). Can create new copy from scratch or generate variations of existing text. Returns one compelling variation with an explanation of the approach.",
   inputSchema: z.object({
     context: z
       .string()
       .min(5, "Context must be at least 5 characters")
-      .describe("Description of what the text is for (e.g., 'checkout CTA button', 'hero headline for SaaS landing page', 'product description')"),
+      .describe(
+        "Description of what the text is for (e.g., 'checkout CTA button', 'hero headline for SaaS landing page', 'product description')",
+      ),
     existingText: z
       .string()
       .optional()
-      .describe("Optional: Current text to generate a variation from. If not provided, will create new copy from scratch."),
+      .describe(
+        "Optional: Current text to generate a variation from. If not provided, will create new copy from scratch.",
+      ),
     targetAudience: z
       .string()
       .optional()
-      .describe("Optional: Description of the target audience (e.g., 'B2B SaaS founders', 'young parents', 'enterprise decision makers')"),
+      .describe(
+        "Optional: Description of the target audience (e.g., 'B2B SaaS founders', 'young parents', 'enterprise decision makers')",
+      ),
     tone: z
       .string()
       .optional()
-      .describe("Optional: Desired tone (e.g., 'professional', 'casual', 'urgent', 'playful', 'empathetic', 'authoritative')"),
+      .describe(
+        "Optional: Desired tone (e.g., 'professional', 'casual', 'urgent', 'playful', 'empathetic', 'authoritative')",
+      ),
+    modelProvider: z
+      .enum(["sonnet", "lmstudio", "groq", "haiku"])
+      .optional()
+      .describe("AI model provider to use. Defaults to 'sonnet'."),
   }),
-  execute: async ({ context, existingText, targetAudience, tone }): Promise<string> => {
+  execute: async ({
+    context,
+    existingText,
+    targetAudience,
+    tone,
+    modelProvider = "sonnet",
+  }): Promise<string> => {
     logger.info("Text variation tool invoked", {
       context: context.substring(0, 100),
       hasExistingText: !!existingText,
       targetAudience: targetAudience?.substring(0, 50),
       tone,
+      modelProvider,
     });
 
     try {
@@ -104,16 +124,20 @@ ${targetAudience}`;
 ${tone}`;
       }
 
-      logger.info("Generating text variation with Claude");
+      logger.info("Generating text variation", { modelProvider });
+
+      // Get model based on provider
+      const model = getModel(modelProvider);
 
       const result = await generateText({
-        model: anthropic("claude-sonnet-4-5"),
+        model, // Use selected model instead of hardcoded
         prompt,
         stopWhen: stepCountIs(5),
-        maxOutputTokens: 1000
+        maxOutputTokens: 1000,
       });
 
       logger.info("Text variation generated successfully", {
+        modelProvider,
         textLength: result.text.length,
         textPreview: result.text.substring(0, 200),
       });
@@ -137,10 +161,13 @@ ${tone}`;
       } catch (parseError) {
         logger.error("Failed to parse text variation JSON", {
           rawTextPreview: rawText.substring(0, 200),
-          parseError: parseError instanceof Error ? {
-            message: parseError.message,
-            stack: parseError.stack,
-          } : String(parseError),
+          parseError:
+            parseError instanceof Error
+              ? {
+                  message: parseError.message,
+                  stack: parseError.stack,
+                }
+              : String(parseError),
         });
         throw new Error("Model did not return valid JSON for text variation.");
       }
@@ -152,13 +179,19 @@ ${tone}`;
       } catch (validationError) {
         logger.error("Text variation JSON validation failed", {
           rawTextPreview: rawText.substring(0, 200),
-          validationError: validationError instanceof z.ZodError
-            ? validationError.issues
-            : validationError instanceof Error
-              ? { message: validationError.message, stack: validationError.stack }
-              : String(validationError),
+          validationError:
+            validationError instanceof z.ZodError
+              ? validationError.issues
+              : validationError instanceof Error
+                ? {
+                    message: validationError.message,
+                    stack: validationError.stack,
+                  }
+                : String(validationError),
         });
-        throw new Error("Model JSON response missing required text variation fields.");
+        throw new Error(
+          "Model JSON response missing required text variation fields.",
+        );
       }
 
       logger.info("Text variation JSON parsed successfully", {
@@ -169,14 +202,19 @@ ${tone}`;
       return JSON.stringify(validated);
     } catch (error) {
       logger.error("Failed to generate text variation", {
-        error: error instanceof Error ? {
-          message: error.message,
-          stack: error.stack,
-        } : String(error),
+        error:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+              }
+            : String(error),
         context: context.substring(0, 100),
+        modelProvider,
       });
-      throw new Error(`Text variation generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Text variation generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   },
 });
-

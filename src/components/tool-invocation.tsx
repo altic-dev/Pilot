@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronDown, ChevronRight, Loader2, CheckCircle2, Clock } from "lucide-react";
 
 // Type definitions for tool invocation parts
@@ -327,6 +327,11 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
   const progressEndRef = useRef<HTMLDivElement>(null);
   const seenProgressMessagesRef = useRef<Set<string>>(new Set());
 
+  // Memoize input hash to prevent reconnecting SSE on every render
+  const inputHash = useMemo(() => {
+    return JSON.stringify(invocation.input);
+  }, [invocation.input]);
+
   const isComplete = invocation.state === "output-available";
 
   // Extract tool name from type (e.g., "tool-projectRetrieval" -> "projectRetrieval")
@@ -352,13 +357,12 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
 
     const setupSSE = async () => {
       try {
-        // Calculate input hash
-        const inputData = JSON.stringify(invocation.input);
+        // Calculate input hash (using memoized inputHash to avoid recalculating)
         const encoder = new TextEncoder();
-        const data = encoder.encode(inputData);
+        const data = encoder.encode(inputHash);
         const hashBuffer = await crypto.subtle.digest("SHA-256", data);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const inputHash = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+        const sha256Hash = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
         // Poll for execution ID
         const pollForExecutionId = async (): Promise<string | null> => {
@@ -370,7 +374,7 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
               const response = await fetch("/api/experiment-progress", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ inputHash }),
+                body: JSON.stringify({ inputHash: sha256Hash }),
               });
 
               if (response.ok) {
@@ -432,7 +436,7 @@ export function ToolInvocation({ invocation }: { invocation: BaseToolInvocation 
     return () => {
       eventSource?.close();
     };
-  }, [toolName, isComplete, invocation.input]);
+  }, [toolName, isComplete, inputHash]);
 
   // Auto-scroll progress messages
   useEffect(() => {
