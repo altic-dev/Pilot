@@ -67,16 +67,17 @@ function ChatContent() {
   }, []);
 
   // Model selection state with localStorage persistence
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>(() => {
-    // Try to load from localStorage on mount (client-side only)
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>("sonnet");
+
+  // Load from localStorage after hydration (client-side only)
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("pilot-selected-model");
       if (saved && isProviderValid(saved)) {
-        return saved as ModelProvider;
+        setSelectedModel(saved as ModelProvider);
       }
     }
-    return "sonnet"; // default
-  });
+  }, []);
 
   // Persist model selection to localStorage
   useEffect(() => {
@@ -189,9 +190,8 @@ function ChatContent() {
         ],
       });
       setInput("");
-      // Note: We keep the selected component after sending,
-      // so user can ask multiple questions about it
-      // To clear: user can click the X button on the pill
+      // Clear the selected component after sending
+      setSelectedComponent(null);
 
       // Reset textarea height after submission
       if (textareaRef.current) {

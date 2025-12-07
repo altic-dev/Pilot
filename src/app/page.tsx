@@ -11,16 +11,17 @@ export default function Home() {
   const router = useRouter();
 
   // Model selection state with localStorage persistence
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>(() => {
-    // Try to load from localStorage on mount (client-side only)
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>("sonnet");
+
+  // Load from localStorage after hydration (client-side only)
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("pilot-selected-model");
       if (saved && isProviderValid(saved)) {
-        return saved as ModelProvider;
+        setSelectedModel(saved as ModelProvider);
       }
     }
-    return "sonnet"; // default
-  });
+  }, []);
 
   // Persist model selection to localStorage
   useEffect(() => {
