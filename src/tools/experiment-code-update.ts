@@ -137,7 +137,7 @@ async function createDockerTools(
 
   // Choose bash tool based on provider
   const bashTool =
-    modelProvider === "claude"
+    modelProvider === "sonnet" || modelProvider === "haiku"
       ? anthropic.tools.bash_20250124({
           execute: async ({ command }) => executeCommand(command),
         })
@@ -154,7 +154,7 @@ async function createDockerTools(
 
   // Choose text editor tool based on provider
   const textEditorTool =
-    modelProvider === "claude"
+    modelProvider === "sonnet" || modelProvider === "haiku"
       ? createToolWithParsedArgs(
           anthropic.tools.textEditor_20250728({
             execute: async ({
@@ -939,9 +939,9 @@ export const experimentCodeUpdateTool = tool({
         "Optional session ID to use an existing Docker container. If provided, the tool will use the existing container and NOT destroy it after completion.",
       ),
     modelProvider: z
-      .enum(["claude", "lmstudio", "groq"])
+      .enum(["sonnet", "lmstudio", "groq", "haiku"])
       .optional()
-      .describe("AI model provider to use. Defaults to 'claude'."),
+      .describe("AI model provider to use. Defaults to 'sonnet'."),
   }),
   execute: async ({
     githubUrl,
@@ -949,7 +949,7 @@ export const experimentCodeUpdateTool = tool({
     hypothesis,
     copyVariant,
     sessionId: providedSessionId,
-    modelProvider = "claude",
+    modelProvider = "sonnet",
   }): Promise<string> => {
     // Use provided sessionId or generate a new one
     const executionId = providedSessionId || crypto.randomUUID();

@@ -63,16 +63,16 @@ export const textVariationTool = tool({
       .optional()
       .describe("Optional: Desired tone (e.g., 'professional', 'casual', 'urgent', 'playful', 'empathetic', 'authoritative')"),
     modelProvider: z
-      .enum(["claude", "lmstudio", "groq"])
+      .enum(["sonnet", "lmstudio", "groq", "haiku"])
       .optional()
-      .describe("AI model provider to use. Defaults to 'claude'."),
+      .describe("AI model provider to use. Defaults to 'sonnet'."),
   }),
   execute: async ({
     context,
     existingText,
     targetAudience,
     tone,
-    modelProvider = "claude",
+    modelProvider = "sonnet",
   }): Promise<string> => {
     logger.info("Text variation tool invoked", {
       context: context.substring(0, 100),

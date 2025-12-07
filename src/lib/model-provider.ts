@@ -3,7 +3,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { groq } from "@ai-sdk/groq";
 import { logger } from "@/lib/logger";
 
-export type ModelProvider = "claude" | "lmstudio" | "groq";
+export type ModelProvider = "sonnet" | "lmstudio" | "groq" | "haiku";
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -12,8 +12,8 @@ export interface ModelConfig {
 }
 
 export const MODEL_CONFIGS: Record<ModelProvider, ModelConfig> = {
-  claude: {
-    provider: "claude",
+  sonnet: {
+    provider: "sonnet",
     displayName: "Claude Sonnet 4.5",
     modelId: "claude-sonnet-4-5",
   },
@@ -26,6 +26,11 @@ export const MODEL_CONFIGS: Record<ModelProvider, ModelConfig> = {
     provider: "groq",
     displayName: "gpt-oss-120b (Groq)",
     modelId: "gpt-oss120b",
+  },
+  haiku: {
+    provider: "haiku",
+    displayName: "Claude Haiku 4.5",
+    modelId: "claude-haiku-4-5",
   },
 };
 
@@ -43,14 +48,16 @@ export function getModel(provider: ModelProvider) {
   logger.info("Getting model provider", { provider });
 
   switch (provider) {
-    case "claude":
+    case "sonnet":
       return anthropic("claude-sonnet-4-5");
+    case "haiku":
+      return anthropic("claude-haiku-4-5");
     case "lmstudio":
       return lmstudioProvider("openai/gpt-oss-20b");
     case "groq":
       return groqProvider;
     default:
-      logger.warn("Unknown provider, defaulting to Claude", { provider });
+      logger.warn("Unknown provider, defaulting to Sonnet", { provider });
       return anthropic("claude-sonnet-4-5");
   }
 }
@@ -60,7 +67,7 @@ export function getModel(provider: ModelProvider) {
  */
 export function isProviderValid(provider: string): provider is ModelProvider {
   return (
-    provider === "claude" || provider === "lmstudio" || provider === "groq"
+    provider === "sonnet" || provider === "lmstudio" || provider === "groq" || provider === "haiku"
   );
 }
 

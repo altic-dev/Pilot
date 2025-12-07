@@ -75,7 +75,7 @@ function ChatContent() {
         return saved as ModelProvider;
       }
     }
-    return "claude"; // default
+    return "sonnet"; // default
   });
 
   // Persist model selection to localStorage

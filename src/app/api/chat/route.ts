@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
   // Validate and sanitize model provider
   const provider: ModelProvider =
-    modelProvider && isProviderValid(modelProvider) ? modelProvider : "claude"; // default fallback
+    modelProvider && isProviderValid(modelProvider) ? modelProvider : "sonnet"; // default fallback
 
   logger.info("Chat API called", {
     messageCount: messages.length,

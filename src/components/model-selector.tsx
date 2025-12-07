@@ -7,12 +7,14 @@ interface ModelSelectorProps {
   value: ModelProvider;
   onChange: (provider: ModelProvider) => void;
   disabled?: boolean;
+  dropdownDirection?: "up" | "down";
 }
 
 export function ModelSelector({
   value,
   onChange,
   disabled,
+  dropdownDirection = "up",
 }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -63,8 +65,10 @@ export function ModelSelector({
             onClick={() => setIsOpen(false)}
           />
 
-          {/* Dropdown - opens upward to stay in viewport */}
-          <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] shadow-xl z-20 overflow-hidden">
+          {/* Dropdown */}
+          <div className={`absolute left-0 w-64 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] shadow-xl z-20 overflow-hidden ${
+            dropdownDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
+          }`}>
             {Object.entries(MODEL_CONFIGS).map(([key, config]) => (
               <button
                 key={key}

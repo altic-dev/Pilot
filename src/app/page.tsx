@@ -19,7 +19,7 @@ export default function Home() {
         return saved as ModelProvider;
       }
     }
-    return "claude"; // default
+    return "sonnet"; // default
   });
 
   // Persist model selection to localStorage
@@ -72,6 +72,7 @@ export default function Home() {
                 <ModelSelector
                   value={selectedModel}
                   onChange={setSelectedModel}
+                  dropdownDirection="down"
                 />
 
                 <button
