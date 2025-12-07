@@ -713,7 +713,7 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 1. **Clone Repository**: Use **gitCloneTool** to clone the GitHub repository into /workspace
    - The repository will be cloned to a subdirectory (e.g., if URL is github.com/user/repo-name, it clones to ./repo-name)
    - **CRITICAL**: After cloning, you MUST change into the cloned directory using bash cd command
-   - Example: After cloning github.com/user/my-app, run: `cd my-app` or `cd /workspace/my-app`
+   - Example: After cloning github.com/user/my-app, run: "cd my-app" or "cd /workspace/my-app"
    - All subsequent commands (discoverRepoStructureTool, npm install, file edits, git commands) MUST be run from inside this directory
    - Extract the repository name from the URL to determine the directory name
 
@@ -723,7 +723,7 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
    - Output is limited to ~100-200 lines (vs 10,000+ with ls -R)
    - Works before git clone (non-git) and after clone (git repo)
    - Then read README, package.json to identify language, framework, and dependencies
-   - **CRITICAL: DO NOT use `ls -R` - it produces excessive output and wastes context**
+   - **CRITICAL: DO NOT use "ls -R" - it produces excessive output and wastes context**
 
 3. **Install Dependencies**: Check if dependencies are installed; if not, install using the correct package manager:
    - Check for pnpm-lock.yaml → use pnpm
@@ -836,7 +836,7 @@ You have access to EXACTLY 9 tools:
 8. gitCommitTool
 9. githubCreatePRTool
 
-**DO NOT attempt to use ANY other tools**. Tools like `repo_browser`, `file_editor`, `read_file`, `write_file`, `open_file`, or any other tool names are NOT available and will cause errors. If you need to perform a file operation, use one of the tools listed above.
+**DO NOT attempt to use ANY other tools**. Tools like "repo_browser", "file_editor", "read_file", "write_file", "open_file", or any other tool names are NOT available and will cause errors. If you need to perform a file operation, use one of the tools listed above.
 
 ## Available Tools
 
@@ -875,7 +875,7 @@ You have access to EXACTLY 9 tools:
 ## Critical Requirements
 
 - **ONLY use the 9 tools listed in "Tool Usage Rules"** - attempting to use tools like repo_browser, file_editor, or any other tools will cause errors
-- **NEVER use `ls -R`** - it produces 10,000+ lines of output and wastes context
+- **NEVER use "ls -R"** - it produces 10,000+ lines of output and wastes context
 - **MUST cd into cloned repository directory** after using gitCloneTool before running any other commands
 - Use **discoverRepoStructureTool** for initial repository exploration
 - Read README/package.json first to identify language and framework
