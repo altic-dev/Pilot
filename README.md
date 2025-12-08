@@ -4,9 +4,9 @@ Pilot is an AI assistant that automates the entire A/B testing workflow with Pos
 
 ## Demo
 
-[![Pilot Demo](https://img.youtube.com/vi/7N76j9AzgAY/maxresdefault.jpg)](https://youtu.be/7N76j9AzgAY)
+![Pilot Home Page](./assets/pilot-home-page.png)
 
-Watch Pilot in action!
+[Watch Pilot in action!](https://youtu.be/Q4hs1AK8VfQ)
 
 ## What Pilot Does
 
@@ -67,6 +67,8 @@ Edit `.env.local` and add your API keys:
 ANTHROPIC_API_KEY=your_anthropic_key_here
 POSTHOG_PERSONAL_API_KEY=your_posthog_key_here
 MORPH_LLM_API_KEY=your_morphllm_key_here
+GITHUB_TOKEN=your_github_token
+GROQ_API_KEY=your_groq_key_here
 ```
 
 ## Running Pilot
