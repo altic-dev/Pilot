@@ -24,37 +24,26 @@ export function ModelSelector({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         disabled={disabled}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] text-gray-300 text-sm hover:border-[#3a3a3a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center gap-3 px-4 py-2 text-sm uppercase tracking-wide font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50"
+        style={{
+          border: "2px solid var(--brutalist-border)",
+          backgroundColor: "var(--brutalist-elevated)",
+          color: "var(--brutalist-text-primary)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = "var(--brutalist-border-heavy)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = "var(--brutalist-border)";
+        }}
       >
-        {/* Icon */}
-        <svg
-          className="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
-          />
-        </svg>
+        {/* Geometric Icon */}
+        <span className="w-3 h-3" style={{ border: "2px solid var(--brutalist-text-primary)" }} />
         <span>{MODEL_CONFIGS[value].displayName}</span>
-        {/* Chevron icon */}
-        <svg
-          className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
-        </svg>
+        {/* Hard Chevron */}
+        <span className={`transition-transform ${isOpen ? "rotate-180" : ""}`}>
+          ▼
+        </span>
       </button>
 
       {isOpen && (
@@ -65,10 +54,16 @@ export function ModelSelector({
             onClick={() => setIsOpen(false)}
           />
 
-          {/* Dropdown */}
-          <div className={`absolute left-0 w-64 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] shadow-xl z-20 overflow-hidden ${
-            dropdownDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"
-          }`}>
+          {/* Dropdown - Heavy Border */}
+          <div
+            className={`absolute left-0 z-20 w-72 brutalist-shadow-md ${
+              dropdownDirection === "up" ? "bottom-full mb-2" : "top-full mt-2"
+            }`}
+            style={{
+              border: "4px solid var(--brutalist-border)",
+              backgroundColor: "var(--brutalist-surface)",
+            }}
+          >
             {Object.entries(MODEL_CONFIGS).map(([key, config]) => (
               <button
                 key={key}
@@ -77,14 +72,29 @@ export function ModelSelector({
                   onChange(key as ModelProvider);
                   setIsOpen(false);
                 }}
-                className={`w-full px-3 py-2.5 text-left text-sm transition-colors ${
-                  value === key
-                    ? "bg-[#2a2a2a] text-white"
-                    : "text-gray-300 hover:bg-[#222222]"
-                }`}
+                className="w-full px-4 py-4 text-left transition-colors last:border-b-0"
+                style={{
+                  borderBottom: "2px solid var(--brutalist-border)",
+                  backgroundColor:
+                    value === key ? "var(--brutalist-text-primary)" : "transparent",
+                  color: value === key ? "var(--brutalist-bg)" : "var(--brutalist-text-primary)",
+                  fontWeight: value === key ? "bold" : "normal",
+                }}
+                onMouseEnter={(e) => {
+                  if (value !== key) {
+                    e.currentTarget.style.backgroundColor = "var(--brutalist-elevated)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (value !== key) {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }
+                }}
               >
-                <div className="font-medium">{config.displayName}</div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="font-bold text-sm uppercase tracking-wide">
+                  {config.displayName}
+                </div>
+                <div className="mt-1 text-xs opacity-70 font-mono">
                   {config.modelId}
                 </div>
               </button>

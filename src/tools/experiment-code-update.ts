@@ -706,7 +706,7 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 
 ## Your Workflow (MUST COMPLETE ALL STEPS IN ORDER)
 
-**CRITICAL**: You MUST complete ALL steps below. Steps 7-8 are MANDATORY and cannot be skipped.
+**CRITICAL**: You MUST complete ALL steps below. Steps 7-9 are MANDATORY and cannot be skipped.
 
 **NOTE**: All file operations happen inside an isolated Docker container at /workspace. The container is automatically created and destroyed for each session.
 
@@ -739,18 +739,26 @@ const EXPERIMENT_CODE_UPDATE_AGENT_PROMPT = `You are an AI agent that automates 
 
 6. **Apply Feature Flag Code**: Generate and apply feature flag code
 
-7. **MANDATORY - Commit Changes**: Use **gitAddTool** and **gitCommitTool** to commit changes
+7. **MANDATORY - Create Feature Branch**: Create a new feature branch before making changes
+   - Use bash tool to create a new branch: "git checkout -b feature/posthog-[flag-key]"
+   - **CRITICAL**: NEVER commit directly to main/master branch
+   - Feature branch name should be descriptive (e.g., "feature/posthog-hero-section-test")
+   - Provide the repository's working directory path
+
+8. **MANDATORY - Commit Changes**: Use **gitAddTool** and **gitCommitTool** to commit changes to the feature branch
    - Use gitAddTool to stage files (e.g., files: ".")
    - Use gitCommitTool with a descriptive message (e.g., "Add PostHog feature flag for [hypothesis]")
    - Provide the repository's working directory path to both tools (e.g., "/workspace/repo-name" where repo-name is from the cloned URL)
    - Do NOT use --author flag or modify git config - use the repository's existing configuration
+   - Verify you are on the feature branch, NOT on main/master
 
-8. **MANDATORY - Create Pull Request**: Use **githubCreatePRTool** to create a PR
+9. **MANDATORY - Create Pull Request**: Use **githubCreatePRTool** to create a PR from the feature branch to main
    - Provide a descriptive title summarizing the feature flag implementation
    - Include body with: what was changed, hypothesis being tested, test variant details
-   - Provide the repository's working directory path (same as step 7)
-   - The tool will automatically push any unpushed commits to the remote
+   - Provide the repository's working directory path (same as step 8)
+   - The tool will automatically push the feature branch and create a PR to merge into main
    - Verify the PR was created successfully and capture the PR URL
+   - **NEVER push directly to main** - always use a feature branch and PR workflow
 
 ## PostHog Feature Flag Patterns
 
@@ -885,29 +893,36 @@ You have access to EXACTLY 9 tools:
 - Use language-appropriate feature flag patterns
 - Keep code changes minimal and focused
 - Include clear comments explaining the A\\/B test logic
-- MUST commit changes with descriptive message
+- **MUST create a feature branch** before making any changes (e.g., "feature/posthog-[flag-key]")
+- **NEVER commit directly to main/master branch** - always use a feature branch
+- MUST commit changes to the feature branch with descriptive message
 - MUST NOT run git config user.name or git config user.email commands
 - MUST NOT use --author flag or any mechanism to override the commit author/committer
 - MUST use the repository's existing git configuration as-is
-- MUST create pull request with descriptive title and body
+- **MUST create pull request from feature branch to main** with descriptive title and body
+- **NEVER push directly to main** - the PR workflow ensures proper code review
 - MUST capture and report the PR URL
 
 ## Success Criteria - YOU MUST COMPLETE ALL OF THESE
 
 Your task is NOT complete until ALL of the following are true:
 
-✓ Changes Committed: You have committed changes using **gitAddTool** and **gitCommitTool**
-✓ Pull Request Created: You have created a PR using **githubCreatePRTool**
+✓ Feature Branch Created: You have created a feature branch (NOT committing to main)
+✓ Changes Committed: You have committed changes to the feature branch using **gitAddTool** and **gitCommitTool**
+✓ Pull Request Created: You have created a PR from the feature branch to main using **githubCreatePRTool**
 ✓ PR URL Captured: You have the PR URL from the successful creation
+✓ No Direct Push to Main: You did NOT push directly to main - all changes are in a feature branch with a PR
 
 ## Final Report - REQUIRED
 
 At the end of your execution, you MUST provide a summary that includes:
 
-✓ Commit Status: Confirm that changes were committed (include commit message)
-✓ Pull Request Status: Confirm that PR was created (include PR URL)
+✓ Feature Branch: Confirm the feature branch name that was created
+✓ Commit Status: Confirm that changes were committed to the feature branch (include commit message)
+✓ Pull Request Status: Confirm that PR was created from feature branch to main (include PR URL)
 ✓ Files Modified: List the files that were changed
 ✓ Repository Path: The working directory path used in the container
+✓ Branch Workflow Confirmed: Verify that NO changes were pushed directly to main
 `;
 
 export const experimentCodeUpdateTool = tool({

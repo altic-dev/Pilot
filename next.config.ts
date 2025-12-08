@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  devIndicators: false,
   webpack: (config, { isServer }) => {
     config.module.rules.push({
       test: /\.md$/,

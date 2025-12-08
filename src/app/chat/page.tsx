@@ -67,17 +67,16 @@ function ChatContent() {
   }, []);
 
   // Model selection state with localStorage persistence
-  const [selectedModel, setSelectedModel] = useState<ModelProvider>("sonnet");
-
-  // Load from localStorage after hydration (client-side only)
-  useEffect(() => {
+  // Initialize from localStorage directly (client-side only)
+  const [selectedModel, setSelectedModel] = useState<ModelProvider>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("pilot-selected-model");
       if (saved && isProviderValid(saved)) {
-        setSelectedModel(saved as ModelProvider);
+        return saved as ModelProvider;
       }
     }
-  }, []);
+    return "sonnet";
+  });
 
   // Persist model selection to localStorage
   useEffect(() => {
